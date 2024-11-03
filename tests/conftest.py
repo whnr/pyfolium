@@ -7,11 +7,7 @@ import pytest
 from hhfk.core import (
     Asset,
     FeeConfig,
-    Portfolio,
-    Position,
     TaxConfig,
-    TaxLot,
-    Transaction,
 )
 
 
@@ -19,8 +15,8 @@ from hhfk.core import (
 def tax_config():
     """Fixture for standard tax configuration"""
     return TaxConfig(
-        short_term_rate=0.30,
-        long_term_rate=0.15,
+        short_term_rate=0.20,
+        long_term_rate=0.10,
     )
 
 
@@ -31,7 +27,7 @@ def fee_config():
         fixed_fee=1.0,
         percentage_fee=0.01,
         minimum_fee=5.0,
-        maximum_fee=30.0,
+        maximum_fee=20.0,
     )
 
 
@@ -72,6 +68,4 @@ def sample_asset(sample_asset_data):
 @pytest.fixture
 def portfolio_with_config(tax_config, fee_config):
     """Fixture providing a portfolio with tax and fee configuration"""
-    return Portfolio(
-        initial_cash=100000.0, tax_config=tax_config, fee_config=fee_config
-    )
+    raise NotImplementedError

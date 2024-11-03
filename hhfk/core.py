@@ -4,6 +4,7 @@ from typing import Dict, List, NamedTuple, Optional, Tuple
 
 import pandas as pd
 
+
 @dataclass
 class TaxConfig:
     """Configuration for tax calculations"""
@@ -12,6 +13,50 @@ class TaxConfig:
     long_term_holding_period: timedelta = timedelta(365)  # at least one year
     long_term_rate: float = 0.0
     withhold_tax: bool = False
+
+    def is_long_term(self, purchase_date: datetime, sale_date: datetime) -> bool:
+        """Check if a transaction is long-term"""
+        return sale_date - purchase_date >= self.long_term_holding_period
+
+    def calculate_tax(
+        self, purchase_date: datetime, sale_date: datetime, proceeds: float
+    ) -> float:
+        """
+        Calculate tax for a given transaction.
+
+        This is useful if you have tax withholding and
+        want to calculate the tax for each transaction.
+        Don't use it if you want to calculate the total tax
+        for your portfolio at the end of a period.
+
+        Parameters
+        ----------
+        purchase_date : datetime
+            Date of purchase
+        sale_date : datetime
+            Date of sale
+        proceeds : float
+            Proceeds from sale. Will raise an error if negative.
+
+        Returns
+        -------
+        tax : float
+            Calculated tax. Will be zero if the transaction is not long-term.k
+
+        Raises
+        ------
+        ValueError
+            If proceeds is negative
+        """
+        if proceeds < 0.0:
+            raise ValueError(
+                "Proceeds must be non-negative. You have to handle losses in Portfolio."
+            )
+        if self.is_long_term(purchase_date, sale_date):
+            tax = proceeds * self.long_term_rate
+        else:
+            tax = proceeds * self.short_term_rate
+        return tax
 
 
 @dataclass

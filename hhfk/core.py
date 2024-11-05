@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Dict, Optional
 
 import pandas as pd
 
@@ -75,19 +75,105 @@ class FeeConfig:
         return max(min(total_fee, self.maximum_fee), self.minimum_fee)
 
 
-@dataclass
 class Asset:
-    """Represents a financial asset with price and optional dividend history"""
+    """Represents a financial asset with data.
 
-    symbol: str
-    data: pd.DataFrame
-    price_column: str = "price"
-    dividend_column: Optional[str] = "dividend"
+    A price column is required.
+    A dividend column is optional.
+    Any other columns can be added to the dataframe.
+    It will automatically add itself to the asset universe.
 
-    def __post_init__(self):
-        if not isinstance(self.data.index, pd.DatetimeIndex):
-            raise ValueError("DataFrame must have a DatetimeIndex")
+    Attributes
+    ----------
+    symbol : str
+        The symbol of the asset.
+    assetUniverse : AssetUniverse
+        The asset universe that the asset will be added to.
+    data : pd.DataFrame
+        The data must have a period index.
+        The frequency of the data must match the data_frequency of the assetUniverse.
+    metadata : Optional[Dict[str, str]]
+        Additional metadata of the asset.
+    price_column : str
+        The name of the column containing the price of the asset."""
+
+    def __init__(
+        self,
+        symbol: str,
+        assetUniverse: "AssetUniverse",
+        data: pd.DataFrame,
+        price_column: str = "price",
+        income_column: Optional[str] = None,
+        metadata: Optional[Dict[str, str]] = None,
+    ):
+        self.symbol = symbol
+        self.assetUniverse = assetUniverse
+        self.data = data
+        self.price_column = price_column
+        if income_column:
+            self.income_column = income_column
+        self.metadata = metadata
+
         if self.price_column not in self.data.columns:
-            raise ValueError(f"Price column '{self.price_column}' not found in data")
-        if self.dividend_column and self.dividend_column not in self.data.columns:
-            self.data[self.dividend_column] = 0.0
+            raise ValueError(f"Column {self.price_column} not in data")
+
+        if not isinstance(self.data.index, pd.PeriodIndex):
+            raise ValueError("Data must have a period index")
+
+        if self.data.index.freqstr != self.assetUniverse.data_frequency:
+            raise ValueError(
+                f"Data frequency of {self.data.index.freqstr}"
+                f"does not match data_frequency of {self.assetUniverse.data_frequency}"
+            )
+
+        self.start_time = self.data.index.min()
+        self.end_time = self.data.index.max()
+
+        # Add the asset to the parent asset universe
+        self.assetUniverse.add_asset(self)
+
+    def get_price_at(self, period: pd.Period, precise: bool = False) -> float:
+        return self.data.loc[period][self.price_column]  # type: ignore
+
+    def get_income_at(self, period: pd.Period, precise: bool = False) -> float:
+        return self.data.loc[period][self.income_column]  # type: ignore
+
+    @property
+    def price(self):
+        return self.data[self.price_column]
+
+    @property
+    def income(self):
+        return self.data[self.income_column]
+
+    def get_historical_data(
+        self,
+        start_time: Optional[pd.Period] = None,
+        end_time: Optional[pd.Period] = None,
+    ) -> pd.DataFrame:
+        """Get historical data for the asset for a given period range."""
+
+        if start_time is None:
+            start_time = self.start_time
+        if end_time is None:
+            end_time = self.end_time
+
+        return self.data.loc[start_time:end_time]  # type: ignore
+
+
+class AssetUniverse:
+    def __init__(self, data_frequency: str):
+        """
+        Initialize the AssetUniverse
+
+        Parameters
+        ----------
+        data_frequency : str
+            String describing the frequency of the data.
+            Must be one of the pandas period aliases like 'D' or 'M'.
+        """
+        self.data_frequency = data_frequency
+        self.assets: Dict[str, Asset] = {}
+
+    def add_asset(self, asset: Asset):
+        self.assets[asset.symbol] = asset

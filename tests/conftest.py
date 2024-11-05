@@ -1,14 +1,8 @@
-from datetime import datetime, timedelta
-
 import numpy as np
 import pandas as pd
 import pytest
 
-from hhfk.core import (
-    Asset,
-    FeeConfig,
-    TaxConfig,
-)
+from hhfk.core import Asset, AssetUniverse, FeeConfig, TaxConfig
 
 
 @pytest.fixture
@@ -32,36 +26,47 @@ def fee_config():
 
 
 @pytest.fixture
-def date_range():
+def day_date_range():
     """Fixture providing a date range for testing"""
-    start_date = datetime(2023, 1, 1)
-    dates = [
-        start_date + timedelta(days=x) for x in range(500)
-    ]  # Extended for long-term gains testing
-    return pd.DatetimeIndex(dates)
+    periodIndex = pd.period_range("2023-01-01", periods=365 * 2, freq="D")
+    return periodIndex
+
+
+def month_date_range():
+    """Fixture providing a date range for testing"""
+    periodIndex = pd.period_range("2023-01-01", periods=24, freq="M")
+    return periodIndex
 
 
 @pytest.fixture
-def sample_asset_data(date_range):
+def sample_asset_universe():
+    """An empty asset universe with a base frequency of 'D'"""
+    return AssetUniverse(data_frequency="D")
+
+
+@pytest.fixture
+def sample_asset_data(day_date_range):
     """Fixture providing sample asset data with price and dividend history"""
     np.random.seed(42)
-    price_data = 100 * (1 + np.random.randn(len(date_range)).cumsum() * 0.02)
-    dividend_data = np.zeros(len(date_range))
+    price_data = 100 * (1 + np.random.randn(len(day_date_range)).cumsum() * 0.02)
+    dividend_data = np.zeros(len(day_date_range))
     dividend_data[::90] = price_data[::90] * 0.01  # Quarterly dividends
 
     return pd.DataFrame(
-        {"price": price_data, "dividend": dividend_data}, index=date_range
+        {"price": price_data, "dividend": dividend_data}, index=day_date_range
     )
 
 
 @pytest.fixture
-def sample_asset(sample_asset_data):
+def sample_asset(sample_asset_data, sample_asset_universe):
     """Fixture providing a sample asset with price and dividend data"""
     return Asset(
         symbol="TEST",
+        assetUniverse=sample_asset_universe,
         data=sample_asset_data,
+        metadata={"description": "test asset", "type": "equity"},
         price_column="price",
-        dividend_column="dividend",
+        income_column="dividend",
     )
 
 

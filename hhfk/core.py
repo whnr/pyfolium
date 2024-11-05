@@ -146,20 +146,6 @@ class Asset:
     def income(self):
         return self.data[self.income_column]
 
-    def get_historical_data(
-        self,
-        start_time: Optional[pd.Period] = None,
-        end_time: Optional[pd.Period] = None,
-    ) -> pd.DataFrame:
-        """Get historical data for the asset for a given period range."""
-
-        if start_time is None:
-            start_time = self.start_time
-        if end_time is None:
-            end_time = self.end_time
-
-        return self.data.loc[start_time:end_time]  # type: ignore
-
 
 class AssetUniverse:
     def __init__(self, data_frequency: str):

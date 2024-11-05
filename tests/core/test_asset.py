@@ -62,7 +62,7 @@ def test_asset_creation_errors(sample_asset):
 def test_asset_accessors(sample_asset):
     end_time = sample_asset.end_time
     assert (sample_asset.price == sample_asset.data["price"]).all()
-    assert (sample_asset.price == sample_asset.data["price"]).all()
+    assert (sample_asset.income == sample_asset.data["dividend"]).all()
 
     assert sample_asset.get_price_at(end_time) == sample_asset.data["price"][end_time]
     assert (

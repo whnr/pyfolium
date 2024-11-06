@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -132,12 +132,6 @@ class Asset:
         # Add the asset to the parent asset universe
         self.assetUniverse.add_asset(self)
 
-    def get_price_at(self, period: pd.Period, precise: bool = False) -> float:
-        return self.data.loc[period][self.price_column]  # type: ignore
-
-    def get_income_at(self, period: pd.Period, precise: bool = False) -> float:
-        return self.data.loc[period][self.income_column]  # type: ignore
-
     @property
     def price(self):
         return self.data[self.price_column]
@@ -145,6 +139,34 @@ class Asset:
     @property
     def income(self):
         return self.data[self.income_column]
+
+    def get_price_at(self, period: pd.Period, precise: bool = True) -> float:
+        """Get the price of the asset at the given period
+
+        Parameters
+        ----------
+        period : pd.Period
+            The period to get the price for
+        precise : bool, optional
+            Whether to get the price for the exact period or the asof value
+
+        Returns
+        -------
+        float
+            The price of the asset at the given period
+        """
+        # if it's before the start date raise an key error
+        if period < self.start_time:
+            raise KeyError("Data not available before the start date")
+
+        if not precise:
+            # Return the last available price before the period
+            return self.price.asof(period)
+
+        return self.price[period]
+
+    def get_income_at(self, period: pd.Period, precise: bool = True) -> float:
+        return self.income[period]
 
 
 class AssetUniverse:
@@ -163,3 +185,118 @@ class AssetUniverse:
 
     def add_asset(self, asset: Asset):
         self.assets[asset.symbol] = asset
+
+    @property
+    def asset_list(self) -> List[str]:
+        """
+        Get the list of asset symbols in the asset universe.
+
+        Returns
+        -------
+        List[str]
+            A list of symbols representing the assets in the universe.
+        """
+        return list(self.assets.keys())
+
+    def get_period_index_range(self) -> pd.PeriodIndex:
+        """
+        Get the period index range for the asset universe
+
+        This spans the start and end time of all assets.
+
+        Returns
+        -------
+        pd.PeriodIndex
+            The period index range for the asset universe
+        """
+        return pd.period_range(
+            min(asset.start_time for asset in self.assets.values()),
+            max(asset.end_time for asset in self.assets.values()),
+            freq=self.data_frequency,
+        )
+
+    def get_price_matrix(self) -> pd.DataFrame:
+        """
+        Get the price matrix for the asset universe
+
+        Returns
+        -------
+        pd.DataFrame
+            The price matrix for the asset universe
+        """
+        return pd.DataFrame(
+            {asset.symbol: asset.price for asset in self.assets.values()},
+            index=self.get_period_index_range(),
+        )
+
+
+class Portfolio:
+    transaction_types = (
+        "buy",
+        "sell",
+        "dividend",
+        "interest",
+        "tax",
+        "deposit",
+        "withdrawal",
+    )
+
+    history_columns = [
+        "asset_value",
+        "cash_value",
+        "long_term_gains",
+        "short_term_gains",
+        "taxes_paid",
+    ]
+
+    transaction_columns = [
+        "period",
+        "type",
+        "symbol",
+        "quantity",
+        "price",
+        "fee",
+        "cost_basis",
+        "tax",
+        "amount",
+    ]
+
+    def __init__(
+        self,
+        asset_universe: AssetUniverse,
+        fee_config: FeeConfig = FeeConfig(),
+        tax_config: TaxConfig = TaxConfig(),
+    ):
+        self.asset_universe = asset_universe
+        self.fee_config = fee_config
+        self.tax_config = tax_config
+        self.cash: float = 0.0
+
+        period_index = self.asset_universe.get_period_index_range()
+        self.history = pd.DataFrame(
+            index=period_index, columns=Portfolio.history_columns
+        )
+
+        self.transactions = pd.DataFrame(columns=Portfolio.transaction_columns)
+
+        self.holdings = pd.DataFrame(
+            index=period_index, columns=self.asset_universe.asset_list
+        )
+
+    def _register_transaction(self):
+        raise NotImplementedError
+
+    def move_cash(self, period: pd.Period, amount: float):
+        raise NotImplementedError
+
+    def buy_asset(self, period: pd.Period, symbol: str, quantity: float):
+        raise NotImplementedError
+
+    def sell_asset(self, period: pd.Period, symbol: str, quantity: float):
+        raise NotImplementedError
+
+    def collect_income(self, period: pd.Period, symbol: str, quantity: float):
+        raise NotImplementedError
+
+    def pay_tax(self, period: pd.Period):
+        raise NotImplementedError

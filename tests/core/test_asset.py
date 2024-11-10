@@ -14,7 +14,7 @@ def test_asset_fixture(sample_asset):
     assert isinstance(sample_asset.data.index, pd.PeriodIndex)
 
 
-def test_asset_creation_errors(sample_asset):
+def test_asset_creation_errors(sample_asset_data):
     monthly_universe = AssetUniverse(data_frequency="M")
 
     # The index is not a period index
@@ -31,7 +31,7 @@ def test_asset_creation_errors(sample_asset):
         Asset(
             symbol="TEST",
             assetUniverse=monthly_universe,
-            data=sample_asset.data,
+            data=sample_asset_data,
             price_column="price",
             income_column="dividend",
         )
@@ -43,6 +43,18 @@ def test_asset_creation_errors(sample_asset):
             assetUniverse=monthly_universe,
             data=pd.DataFrame(),
             price_column="price",
+        )
+
+    daily_universe = AssetUniverse(data_frequency="D")
+
+    # We cannot find the income column
+    with raises(ValueError):
+        Asset(
+            symbol="TEST",
+            assetUniverse=daily_universe,
+            data=sample_asset_data,
+            price_column="price",
+            income_column="foobar",
         )
 
 

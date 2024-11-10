@@ -214,20 +214,20 @@ class Portfolio:
         "taxes_paid_in_period",
     ]
 
-    transaction_columns = [
-        "period",
-        "type",
-        "symbol",
-        "quantity",
-        "lot_quantity_remaining",  # for tax lot tracking partial sales
-        "price",
-        "fee",
-        "cost_basis_per_share",
-        "tax_paid",
-        "long_term_gains",
-        "short_term_gains",
-        "transaction_amount",  # cash flow view
-    ]
+    transaction_columns = {
+        "period": pd.PeriodDtype(freq="D"),  # just using D as a placeholder
+        "type": str,
+        "symbol": str,
+        "quantity": float,
+        "lot_quantity_remaining": float,  # for tax lot tracking partial sales
+        "price": float,
+        "fee": float,
+        "cost_basis_per_share": float,
+        "tax_paid": float,
+        "long_term_gains": float,
+        "short_term_gains": float,
+        "transaction_amount": float,  # cash flow view
+    }
 
     transaction_types = (
         "buy",
@@ -293,11 +293,16 @@ class Portfolio:
         self.history = pd.DataFrame(
             index=period_index, columns=Portfolio.history_columns
         )
+        self.history.astype(float)
 
         self.transactions = pd.DataFrame(columns=Portfolio.transaction_columns)
+        self.transactions = self.transactions.astype(Portfolio.transaction_columns)
+        self.transactions["period"] = self.transactions["period"].astype(
+            pd.PeriodDtype(freq=self.asset_universe.data_frequency)
+        )
 
         self.holdings = pd.DataFrame(
-            index=period_index, columns=self.asset_universe.asset_list
+            data=0.0, index=period_index, columns=self.asset_universe.asset_list
         )
 
         # initialize the portfolio state tracker
@@ -306,6 +311,10 @@ class Portfolio:
         )
 
     def _check_state(self, period: pd.Period, expected_state: PortfolioState):
+        if period > self._portfolio_states.index.min():
+            # check that the last period was not in the DONE state
+            if self._portfolio_states[period - 1] != PortfolioState.DONE:
+                raise RuntimeError("Last period was not in the DONE state")
         current_state = self._portfolio_states[period]
         if current_state != expected_state:
             raise RuntimeError(
@@ -417,7 +426,8 @@ class Portfolio:
 
         # Concatenate the transaction to the transactions dataframe
         self.transactions = pd.concat(
-            [self.transactions, pd.DataFrame([kwargs])], ignore_index=True
+            [self.transactions, pd.DataFrame([kwargs]).dropna(axis=1, how="all")],
+            ignore_index=True,
         )
 
     def collect_income_per_period(self, period: pd.Period):
@@ -685,7 +695,7 @@ class Portfolio:
             period=period,
             type="sell",
             symbol=symbol,
-            quantity=quantity_to_sell,
+            quantity=quantity,
             price=price,
             fee=fee,
             tax_paid=tax_paid,

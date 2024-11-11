@@ -102,10 +102,7 @@ class Asset:
 
     @property
     def income(self):
-        if self.income_column:
-            return self.data[self.income_column]
-        else:
-            return None
+        return self.data[self.income_column]
 
     def get_price_at(self, period: pd.Period, precise: bool = True) -> float:
         """Get the price of the asset at the given period

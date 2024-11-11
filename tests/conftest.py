@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from hhfk.core import Asset, AssetUniverse, FeeConfig, TaxConfig
+from hhfk.core import Asset, AssetUniverse, FeeConfig, Portfolio, TaxConfig
 
 
 @pytest.fixture
@@ -71,6 +71,65 @@ def sample_asset(sample_asset_data, sample_asset_universe):
 
 
 @pytest.fixture
-def portfolio_with_config(tax_config, fee_config):
+def asset_universe_with_assets(sample_asset_universe, sample_asset_data):
+    """Fixture providing a sample asset universe with assets"""
+    Asset(
+        symbol="TEST",
+        assetUniverse=sample_asset_universe,
+        data=sample_asset_data,
+        metadata={"description": "test asset", "type": "equity"},
+        price_column="price",
+        income_column="dividend",
+    )
+    Asset(
+        symbol="TEST2",
+        assetUniverse=sample_asset_universe,
+        data=sample_asset_data,
+        metadata={"description": "test asset 2", "type": "equity"},
+        price_column="price",
+        income_column="dividend",
+    )
+    return sample_asset_universe
+
+
+@pytest.fixture
+def default_portfolio(sample_asset_universe):
+    """Fixture providing a default portfolio"""
+    return Portfolio(asset_universe=sample_asset_universe)
+
+
+@pytest.fixture
+def portfolio_with_config(asset_universe_with_assets, tax_config, fee_config):
     """Fixture providing a portfolio with tax and fee configuration"""
-    raise NotImplementedError
+    return Portfolio(
+        asset_universe=asset_universe_with_assets,
+        tax_config=tax_config,
+        fee_config=fee_config,
+    )
+
+
+@pytest.fixture
+def asset_universe_for_income_testing():
+    asset_universe = AssetUniverse(data_frequency="D")
+    periods = pd.period_range("2023-01-01", periods=3, freq="D")
+
+    Asset(
+        symbol="A",
+        assetUniverse=asset_universe,
+        data=pd.DataFrame(
+            {"price": [10.0, 10.0, 10.0], "income": [1.0, 2.0, 3.0]}, index=periods
+        ),
+        price_column="price",
+        income_column="income",
+    )
+    Asset(
+        symbol="B",
+        assetUniverse=asset_universe,
+        data=pd.DataFrame(
+            {"price": [20.0, 20.0, 20.0], "income": [4.0, 5.0, 6.0]}, index=periods
+        ),
+        price_column="price",
+        income_column="income",
+    )
+
+    return asset_universe

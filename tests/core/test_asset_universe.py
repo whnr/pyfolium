@@ -1,9 +1,24 @@
 import pandas as pd
+from pytest import raises
 
 from hhfk.core import Asset
 
 
-def test_asset_in_unniverse(sample_asset_data, sample_asset_universe):
+def test_asset_universe_empty(sample_asset_universe, sample_asset_data):
+    assert sample_asset_universe.empty
+
+    Asset(
+        symbol="TEST",
+        assetUniverse=sample_asset_universe,
+        data=sample_asset_data,
+        price_column="price",
+        income_column="dividend",
+    )
+
+    assert not sample_asset_universe.empty
+
+
+def test_asset_in_universe(sample_asset_data, sample_asset_universe):
     assetUniverse = sample_asset_universe
 
     new_asset = Asset(
@@ -16,6 +31,38 @@ def test_asset_in_unniverse(sample_asset_data, sample_asset_universe):
 
     assert len(assetUniverse.assets) == 1
     assert new_asset in assetUniverse.assets.values()
+
+
+def test_adding_empty_asset_raises_error(sample_asset_universe):
+    with raises(ValueError):
+        Asset(
+            symbol="TEST",
+            assetUniverse=sample_asset_universe,
+            data=pd.DataFrame(),
+            price_column="price",
+            income_column="dividend",
+        )
+
+
+def test_adding_asset_with_same_symbol_raises_error(
+    sample_asset_universe, sample_asset_data
+):
+    with raises(ValueError):
+        Asset(
+            symbol="TEST",
+            assetUniverse=sample_asset_universe,
+            data=sample_asset_data,
+            price_column="price",
+            income_column="dividend",
+        )
+
+        Asset(
+            symbol="TEST",
+            assetUniverse=sample_asset_universe,
+            data=sample_asset_data,
+            price_column="price",
+            income_column="dividend",
+        )
 
 
 def test_asset_universe_price_matrix(sample_asset_data, sample_asset_universe):

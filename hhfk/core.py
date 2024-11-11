@@ -139,7 +139,7 @@ class Asset:
 class AssetUniverse:
     def __init__(self, data_frequency: str):
         """
-        Initialize the AssetUniverse
+        Initialize the empty AssetUniverse
 
         Parameters
         ----------
@@ -151,6 +151,7 @@ class AssetUniverse:
         self.assets: Dict[str, Asset] = {}
         self.price_matrix: pd.DataFrame = pd.DataFrame()
         self.income_matrix: pd.DataFrame = pd.DataFrame()
+        self.empty = True
 
     def _update_price_matrix(self) -> None:
         self.price_matrix = pd.DataFrame(
@@ -165,12 +166,21 @@ class AssetUniverse:
         )
 
     def add_asset(self, asset: Asset):
+        # Check if we're trying to add an asset with the same symbol
+        if asset.symbol in self.assets:
+            raise ValueError(f"Asset with symbol {asset.symbol} already exists")
+        # check if the asset is empty
+        if asset.data.empty:
+            raise ValueError(f"Asset with symbol {asset.symbol} is empty")
+
         self.assets[asset.symbol] = asset
         self._update_price_matrix()
         self._update_income_matrix()
+        # Finally flag that the universe is not empty anymore
+        self.empty = False
 
     @property
-    def asset_list(self) -> List[str]:
+    def asset_symbols_list(self) -> List[str]:
         """
         Get the list of asset symbols in the asset universe.
 
@@ -284,6 +294,11 @@ class Portfolio:
         You need to check that yourself.
         """
         self.asset_universe = asset_universe
+        if self.asset_universe.empty:
+            raise ValueError(
+                "Asset universe is empty."
+                "all assets must be added before initializing the portfolio"
+            )
         self.fee_config = fee_config
         self.tax_config = tax_config
         self.cash: float = 0.0
@@ -302,24 +317,26 @@ class Portfolio:
         )
 
         self.holdings = pd.DataFrame(
-            data=0.0, index=period_index, columns=self.asset_universe.asset_list
+            data=0.0, index=period_index, columns=self.asset_universe.asset_symbols_list
         )
 
         # initialize the portfolio state tracker
-        self._portfolio_states = pd.Series(
-            index=period_index, data=PortfolioState.COLLECT_INCOME
-        )
+        self._states = pd.Series(index=period_index, data=PortfolioState.COLLECT_INCOME)
 
     def _check_state(self, period: pd.Period, expected_state: PortfolioState):
-        if period > self._portfolio_states.index.min():
+        if period > self._states.index.min():
+            # TODO add handling for skipped periods
+            # TODO We guarantee monotonicity but not single period steps
             # check that the last period was not in the DONE state
-            if self._portfolio_states[period - 1] != PortfolioState.DONE:
-                raise RuntimeError("Last period was not in the DONE state")
-        current_state = self._portfolio_states[period]
+            if self._states[period - 1] != PortfolioState.DONE:
+                raise RuntimeError(
+                    f"Last period was not in the {PortfolioState.DONE.value} state"
+                )
+        current_state = self._states[period]
         if current_state != expected_state:
             raise RuntimeError(
-                f"Portfolio is in the wrong state: {current_state}. "
-                f"Expected state: {expected_state}"
+                f"Portfolio is in the wrong state: {current_state.value}. "
+                f"Expected state: {expected_state.value}"
             )
 
     def _update_future_holdings(self, period: pd.Period, symbol: str, quantity: float):
@@ -343,39 +360,6 @@ class Portfolio:
         """
         mask = self.holdings.index >= period
         self.holdings.loc[mask, symbol] += quantity
-
-    def update_history_for_period(self, period: pd.Period):
-        """
-        Update the history of the portfolio for a period.
-
-        This method is meant to be called after all transactions for the period have been
-        processed. It will summarize the transactions and update the history of the portfolio.
-
-        Parameters
-        ----------
-        period : pd.Period
-            The period to update the history for.
-
-        Notes
-        -----
-        This method enforces the order of operations for updating the portfolio.
-        It will only run if the portfolio is in the `PortfolioState.TRANSACT` state.
-        After running, it will transition the portfolio to the `PortfolioState.DONE` state.
-        """
-        self._check_state(period, PortfolioState.TRANSACT)
-
-        # get all transactoins for this period and summarize them
-        period_transactions = self.transactions[self.transactions["period"] == period]
-
-        self.history.loc[period] = {
-            "cash": self.cash,
-            "tax_owed": self.tax_owed,
-            "long_term_gains_in_period": period_transactions["long_term_gains"].sum(),
-            "short_term_gains_in_period": period_transactions["short_term_gains"].sum(),
-            "taxes_paid_in_period": period_transactions["tax_paid"].sum(),
-        }
-
-        self._portfolio_states[period] = PortfolioState.DONE
 
     def _register_transaction(self, **kwargs) -> None:
         """
@@ -420,15 +404,46 @@ class Portfolio:
         # Check if there are any unexpected columns in the transaction
         unexpected_columns = set(kwargs.keys()) - set(Portfolio.transaction_columns)
         if unexpected_columns:
-            raise KeyError(
-                f"Unexpected columns in the transaction: {unexpected_columns}"
-            )
+            raise KeyError(f"Unexpected columns in transaction: {unexpected_columns}")
 
         # Concatenate the transaction to the transactions dataframe
         self.transactions = pd.concat(
             [self.transactions, pd.DataFrame([kwargs]).dropna(axis=1, how="all")],
             ignore_index=True,
         )
+
+    def update_history_for_period(self, period: pd.Period):
+        """
+        Update the history of the portfolio for a period.
+
+        This method is meant to be called after all transactions for the period have been
+        processed. It will summarize the transactions and update the history of the portfolio.
+
+        Parameters
+        ----------
+        period : pd.Period
+            The period to update the history for.
+
+        Notes
+        -----
+        This method enforces the order of operations for updating the portfolio.
+        It will only run if the portfolio is in the `PortfolioState.TRANSACT` state.
+        After running, it will transition the portfolio to the `PortfolioState.DONE` state.
+        """
+        self._check_state(period, PortfolioState.TRANSACT)
+
+        # get all transactoins for this period and summarize them
+        period_transactions = self.transactions[self.transactions["period"] == period]
+
+        self.history.loc[period] = {
+            "cash": self.cash,
+            "tax_owed": self.tax_owed,
+            "long_term_gains_in_period": period_transactions["long_term_gains"].sum(),
+            "short_term_gains_in_period": period_transactions["short_term_gains"].sum(),
+            "taxes_paid_in_period": period_transactions["tax_paid"].sum(),
+        }
+
+        self._states[period] = PortfolioState.DONE
 
     def collect_income_per_period(self, period: pd.Period):
         """Collect all the income for a single period.
@@ -504,7 +519,7 @@ class Portfolio:
             self.tax_owed += tax_liability
             self.cash += transaction_amount
 
-        self._portfolio_states[period] = PortfolioState.TRANSACT
+        self._states[period] = PortfolioState.TRANSACT
 
     def move_cash(self, period: pd.Period, amount: float):
         """
@@ -605,7 +620,7 @@ class Portfolio:
             The symbol of the asset to sell
         quantity : float
             The quantity of the asset to sell.
-            Sign indicates the direction of the transaction.
+            Quantity must be positive.
 
         Notes
         -----
@@ -689,7 +704,7 @@ class Portfolio:
             tax_paid = tax_liability
             tax_liability = 0.0
 
-        transaction_amount = quantity_to_sell * price - fee - tax_paid
+        transaction_amount = quantity * price - fee - tax_paid
 
         self._register_transaction(
             period=period,
@@ -705,7 +720,7 @@ class Portfolio:
         )
 
         # important: quantity_to_sell is negative
-        self._update_future_holdings(period, symbol, -quantity_to_sell)
+        self._update_future_holdings(period, symbol, -quantity)
 
         self.cash += transaction_amount
         self.tax_owed += tax_liability

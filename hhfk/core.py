@@ -750,6 +750,8 @@ class Portfolio:
             raise ValueError("Amount is greater than tax owed")
         elif amount < 0:
             raise ValueError("Amount is negative. That's not how tax works.")
+        elif amount == 0:
+            return
 
         self._register_transaction(
             period=period,

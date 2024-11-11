@@ -486,3 +486,54 @@ def test_move_cash_states(portfolio_with_config):
 
     with raises(RuntimeError, match="wrong state: DONE. Expected state: TRANSACT"):
         portfolio.move_cash(current_period, 100)
+
+
+def test_pay_tax(portfolio_with_config):
+    portfolio = portfolio_with_config
+    current_period = portfolio.history.index[0]
+
+    portfolio.collect_income_per_period(current_period)
+
+    # pay all the tax
+    portfolio.tax_owed = 100
+    portfolio.pay_tax(current_period)
+    assert portfolio.tax_owed == 0
+    assert portfolio.cash == -100
+
+    # pay spefic amount of tax
+    portfolio.tax_owed = 100
+    portfolio.pay_tax(current_period, 50)
+    assert portfolio.tax_owed == 50
+    assert portfolio.cash == -150
+    portfolio.tax_owed = 100
+
+    # paying 0 shouldn't change anything
+    portfolio.pay_tax(current_period, 0)
+    assert portfolio.tax_owed == 100
+
+    assert len(portfolio.transactions) == 2
+
+
+def test_pay_tax_errors(portfolio_with_config):
+    portfolio = portfolio_with_config
+    current_period = portfolio.history.index[0]
+
+    portfolio.collect_income_per_period(current_period)
+    with raises(ValueError, match="Amount is greater than tax owed"):
+        portfolio.pay_tax(current_period, 1.0)
+
+    with raises(ValueError, match="Amount is negative. That's not how tax works."):
+        portfolio.pay_tax(current_period, -1.0)
+
+
+def test_pay_tax_states(portfolio_with_config):
+    portfolio = portfolio_with_config
+    current_period = portfolio.history.index[0]
+
+    portfolio.collect_income_per_period(current_period)
+    portfolio.pay_tax(current_period)
+    assert portfolio._states[current_period] == PortfolioState.TRANSACT
+    portfolio.update_history_for_period(current_period)
+
+    with raises(RuntimeError, match="wrong state: DONE. Expected state: TRANSACT"):
+        portfolio.pay_tax(current_period)

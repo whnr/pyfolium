@@ -248,8 +248,8 @@ class Portfolio:
     def __init__(
         self,
         asset_universe: AssetUniverse,
-        fee_config: FeeConfig = FeeConfig(),
-        tax_config: TaxConfig = TaxConfig(),
+        fee_config: Optional[FeeConfig] = None,
+        tax_config: Optional[TaxConfig] = None,
     ):
         """
         Initialize the Portfolio.
@@ -296,8 +296,8 @@ class Portfolio:
                 "Asset universe is empty."
                 "all assets must be added before initializing the portfolio"
             )
-        self.fee_config = fee_config
-        self.tax_config = tax_config
+        self.fee_config = fee_config or FeeConfig()
+        self.tax_config = tax_config or TaxConfig()
         self.cash: float = 0.0
         self.tax_owed: float = 0.0
 
@@ -584,7 +584,7 @@ class Portfolio:
 
         price = self.asset_universe.assets[symbol].get_price_at(period)
         fee = self.fee_config.calculate_fee(quantity * price)
-        cost_basis_per_share = price - fee / quantity
+        cost_basis_per_share = price + fee / quantity
         transaction_amount = -(quantity * price + fee)
 
         self._register_transaction(
@@ -643,7 +643,7 @@ class Portfolio:
         current_holding_quantity = tax_lots["lot_quantity_remaining"].sum()
 
         if quantity <= 0:
-            raise ValueError("Quantity must be positive")
+            raise ValueError("Quantity must be greater than 0")
         elif quantity > current_holding_quantity:
             raise ValueError(
                 f"Quantity to sell {quantity} is greater than current holdings "

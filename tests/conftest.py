@@ -32,6 +32,7 @@ def day_date_range():
     return periodIndex
 
 
+@pytest.fixture
 def month_date_range():
     """Fixture providing a date range for testing"""
     periodIndex = pd.period_range("2023-01-01", periods=24, freq="M")
@@ -99,7 +100,17 @@ def default_portfolio(sample_asset_universe):
 
 
 @pytest.fixture
-def portfolio_with_config(asset_universe_with_assets, tax_config, fee_config):
+def portfolio_with_assets(asset_universe_with_assets):
+    """Fixture providing a portfolio with tax and fee configuration"""
+    return Portfolio(
+        asset_universe=asset_universe_with_assets,
+    )
+
+
+@pytest.fixture
+def portfolio_with_assets_taxes_fees(
+    asset_universe_with_assets, tax_config, fee_config
+):
     """Fixture providing a portfolio with tax and fee configuration"""
     return Portfolio(
         asset_universe=asset_universe_with_assets,
@@ -130,6 +141,27 @@ def asset_universe_for_income_testing():
         ),
         price_column="price",
         income_column="income",
+    )
+
+    return asset_universe
+
+
+@pytest.fixture
+def asset_universe_for_sell_asset_testing():
+    asset_universe = AssetUniverse(data_frequency="D")
+    periods = pd.period_range("2023-01-01", periods=3, freq="D")
+
+    Asset(
+        symbol="A",
+        assetUniverse=asset_universe,
+        data=pd.DataFrame({"price": [10.0, 12.0, 14.0]}, index=periods),
+        price_column="price",
+    )
+    Asset(
+        symbol="B",
+        assetUniverse=asset_universe,
+        data=pd.DataFrame({"price": [20.0, 22.0, 24.0]}, index=periods),
+        price_column="price",
     )
 
     return asset_universe

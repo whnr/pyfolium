@@ -12,6 +12,7 @@ pytest-cov = "*"
 black = "*"
 isort = {extras = ["colors"], version = "*"}
 pandas-stubs = "*"
+mypy = "*"
 
 [requires]
 python_version = "3.12"

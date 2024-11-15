@@ -1,5 +1,4 @@
 from copy import deepcopy
-from typing import Optional
 
 import pandas as pd
 from pytest import raises
@@ -16,15 +15,15 @@ def assert_transaction(
     period: pd.PeriodDtype,
     type: str,
     transaction_amount: float,
-    symbol: Optional[str] = None,
-    quantity: Optional[float] = None,
-    lot_quantity_remaining: Optional[float] = None,
-    price: Optional[float] = None,
-    fee: Optional[float] = None,
-    cost_basis_per_share: Optional[float] = None,
-    tax_paid: Optional[float] = None,
-    long_term_gains: Optional[float] = None,
-    short_term_gains: Optional[float] = None,
+    symbol: str | None = None,
+    quantity: float | None = None,
+    lot_quantity_remaining: float | None = None,
+    price: float | None = None,
+    fee: float | None = None,
+    cost_basis_per_share: float | None = None,
+    tax_paid: float | None = None,
+    long_term_gains: float | None = None,
+    short_term_gains: float | None = None,
 ):
     """
     Asserts that a transaction series has the expected values.
@@ -379,6 +378,33 @@ def test_collect_income_per_period(asset_universe_for_income_testing):
     assert portfolio.cash == 120
 
 
+def test_collect_income_per_period_negative_gains(asset_universe_for_income_testing):
+    # TODO test with Asset B that has negative gains
+    taxConfig = TaxConfig(
+        short_term_rate=0.5,
+    )
+    portfolio = Portfolio(
+        asset_universe=asset_universe_for_income_testing, tax_config=taxConfig
+    )
+
+    current_period = portfolio.history.index[0]
+    portfolio.collect_income_per_period(current_period)
+    # We are buying asset B, price 20
+    # Negative gains of -4, -5, -6 over the 3 periods
+    quantity = 5
+    portfolio.move_cash(current_period, 100)
+    portfolio.buy_asset(period=current_period, symbol="B", quantity=quantity)
+    portfolio.update_history_for_period(current_period)
+    assert portfolio.history.loc[current_period]["short_term_gains_in_period"] == 0.0
+    assert portfolio.cash == 0
+    current_period = portfolio.history.index[1]
+    portfolio.collect_income_per_period(current_period)
+    assert portfolio.tax_owed == 0
+    assert portfolio.cash == -5 * quantity
+    portfolio.update_history_for_period(current_period)
+    assert portfolio.history.loc[current_period]["short_term_gains_in_period"] == -25.0
+
+
 def test_collect_income_per_period_short_long_term(asset_universe_for_income_testing):
     # simple setup: 2 assets, 3 periods
     asset_universe = asset_universe_for_income_testing
@@ -716,8 +742,51 @@ def test_sell_asset_transaction(asset_universe_for_sell_asset_testing):
     )
 
 
-def test_sell_asset_short_long_term_50tax(portfolio_with_assets):
-    # there should be more than a single test. This is just a placeholder
+def test_sell_asset_cost_basis_per_share(
+    portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
+):
+    assert False
+
+
+def test_sell_asset_short_term_gains(
+    portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
+):
+    assert False
+
+
+def test_sell_asset_long_term_gains(
+    portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
+):
+    assert False
+
+
+def test_sell_asset_transaction_amount(
+    portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
+):
+    assert False
+
+
+def test_sell_asset_tax_paid(
+    portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
+):
+    assert False
+
+
+def test_sell_asset_tax_owed(
+    portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
+):
+    assert False
+
+
+def test_sell_asset_negative_capital_gains_with_withholding(
+    portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
+):
+    assert False
+
+
+def test_sell_asset_negative_capital_gains_no_withholding(
+    portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
+):
     assert False
 
 

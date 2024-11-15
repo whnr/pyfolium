@@ -137,7 +137,7 @@ def asset_universe_for_income_testing():
         symbol="B",
         assetUniverse=asset_universe,
         data=pd.DataFrame(
-            {"price": [20.0, 20.0, 20.0], "income": [4.0, 5.0, 6.0]}, index=periods
+            {"price": [20.0, 20.0, 20.0], "income": [-4.0, -5.0, -6.0]}, index=periods
         ),
         price_column="price",
         income_column="income",
@@ -160,8 +160,30 @@ def asset_universe_for_sell_asset_testing():
     Asset(
         symbol="B",
         assetUniverse=asset_universe,
-        data=pd.DataFrame({"price": [20.0, 22.0, 24.0]}, index=periods),
+        data=pd.DataFrame({"price": [20.0, 15.0, 10.0]}, index=periods),
         price_column="price",
     )
 
     return asset_universe
+
+
+@pytest.fixture
+def portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long(
+    asset_universe_for_sell_asset_testing,
+):
+    tax_config = TaxConfig(
+        long_term_holding_period=pd.DateOffset(days=2),
+        short_term_rate=0.5,
+        long_term_rate=0.25,
+        withhold_tax=False,
+    )
+
+    fee_config = FeeConfig(
+        percentage_fee=0.01,
+    )
+
+    return Portfolio(
+        asset_universe=asset_universe_for_sell_asset_testing,
+        tax_config=tax_config,
+        fee_config=fee_config,
+    )

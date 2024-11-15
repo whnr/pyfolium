@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import pandas as pd
 
@@ -49,7 +49,7 @@ class Asset:
     data : pd.DataFrame
         The data must have a period index.
         The frequency of the data must match the data_frequency of the assetUniverse.
-    metadata : Optional[Dict[str, str]]
+    metadata : Dict[str, str], optional
         Additional metadata of the asset.
     price_column : str
         The name of the column containing the price of the asset."""
@@ -60,8 +60,8 @@ class Asset:
         assetUniverse: "AssetUniverse",
         data: pd.DataFrame,
         price_column: str = "price",
-        income_column: Optional[str] = None,
-        metadata: Optional[Dict[str, str]] = None,
+        income_column: str | None = None,
+        metadata: Dict[str, str] | None = None,
     ):
         self.symbol = symbol
         self.assetUniverse = assetUniverse
@@ -248,8 +248,8 @@ class Portfolio:
     def __init__(
         self,
         asset_universe: AssetUniverse,
-        fee_config: Optional[FeeConfig] = None,
-        tax_config: Optional[TaxConfig] = None,
+        fee_config: FeeConfig | None = None,
+        tax_config: TaxConfig | None = None,
     ):
         """
         Initialize the Portfolio.
@@ -458,13 +458,19 @@ class Portfolio:
         holding period of the assets and applies the corresponding tax rates.
         It then registers the income transaction, updates the cash balance,
         and tax liability of the portfolio.
+
+        Notes
+        -----
+        If an asset has a negative income, negative income will be collected.
+        No taxes will be paid on negative income, but it will register negative gains.
+        If you are short on a position, your income will be negative!
         """
         self._check_state(period, PortfolioState.COLLECT_INCOME)
 
         symbols = (
             self.holdings.loc[period] * self.asset_universe.income_matrix.loc[period]
         )
-        symbols = self.holdings.columns[symbols > 0]
+        symbols = self.holdings.columns[symbols != 0]
 
         for symbol in symbols:
             # get the income
@@ -496,7 +502,11 @@ class Portfolio:
             )
 
             tax_paid = 0.0
-            if self.tax_config.withhold_tax:
+            # If we have negative income, we don't pay any taxes
+            # If we are short on a position we will also have to pay money
+            if total_quantity * income < 0.0:
+                tax_liability = 0.0
+            elif self.tax_config.withhold_tax:
                 tax_paid = tax_liability
                 tax_liability = 0.0
 
@@ -722,7 +732,7 @@ class Portfolio:
         self.cash += transaction_amount
         self.tax_owed += tax_liability
 
-    def pay_tax(self, period: pd.Period, amount: Optional[float] = None):
+    def pay_tax(self, period: pd.Period, amount: float | None = None):
         """
         Pay taxes owed.
 
@@ -732,7 +742,7 @@ class Portfolio:
         ----------
         period : pd.Period
             The period to pay taxes for
-        amount : Optional[float], optional
+        amount : float, optional
             The amount of taxes to pay.
 
         Raises

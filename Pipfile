@@ -13,6 +13,7 @@ black = "*"
 isort = {extras = ["colors"], version = "*"}
 pandas-stubs = "*"
 mypy = "*"
+deepdiff = "*"
 
 [requires]
 python_version = "3.12"

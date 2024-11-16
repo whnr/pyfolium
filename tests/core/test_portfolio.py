@@ -5,10 +5,6 @@ from pytest import approx, raises
 
 from hhfk.core import AssetUniverse, FeeConfig, Portfolio, PortfolioState, TaxConfig
 
-# Make debugging easier
-pd.options.display.max_columns = None
-pd.options.display.width = None
-
 
 def assert_transaction(
     transaction: pd.Series,

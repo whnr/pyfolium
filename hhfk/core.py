@@ -203,7 +203,9 @@ class AssetUniverse:
         Returns
         -------
         pd.PeriodIndex
-            The period index range for the asset universe
+            The gapless period index range for the asset universe.
+            E.g. it will have all weekends even if they are not present
+            in the daily asset data.
         """
         return pd.period_range(
             min(asset.start_time for asset in self.assets.values()),
@@ -314,7 +316,7 @@ class Portfolio:
         self.history.astype(float)
 
         self.transactions = pd.DataFrame(columns=Portfolio.transaction_columns)
-        self.transactions = self.transactions.astype(Portfolio.transaction_columns)
+        self.transactions = self.transactions.astype(Portfolio.transaction_columns)  # type: ignore
         self.transactions["period"] = self.transactions["period"].astype(
             pd.PeriodDtype(freq=self.asset_universe.data_frequency)
         )
@@ -324,7 +326,7 @@ class Portfolio:
         )
 
         # initialize the portfolio state tracker
-        self._states = pd.Series(index=period_index, data=PortfolioState.COLLECT_INCOME)
+        self._states = pd.Series(index=period_index, data=PortfolioState.COLLECT_INCOME)  # type: ignore
 
     def _check_state(self, period: pd.Period, expected_state: PortfolioState):
         if period > self._states.index.min():
@@ -438,7 +440,7 @@ class Portfolio:
         # get all transactoins for this period and summarize them
         period_transactions = self.transactions[self.transactions["period"] == period]
 
-        self.history.loc[period] = {
+        self.history.loc[period] = {  # type: ignore
             "cash": self.cash,
             "tax_owed": self.tax_owed,
             "long_term_gains_in_period": period_transactions["long_term_gains"].sum(),
@@ -474,13 +476,13 @@ class Portfolio:
         self._check_state(period, PortfolioState.COLLECT_INCOME)
 
         symbols = (
-            self.holdings.loc[period] * self.asset_universe.income_matrix.loc[period]
+            self.holdings.loc[period] * self.asset_universe.income_matrix.loc[period]  # type: ignore
         )
         symbols = self.holdings.columns[symbols != 0]
 
         for symbol in symbols:
             # get the income
-            income = self.asset_universe.income_matrix.loc[period, symbol]
+            income = self.asset_universe.income_matrix.loc[period, symbol]  # type: ignore
 
             # filter transactions to this symbol only buy
             tax_lots = self.transactions[

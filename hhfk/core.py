@@ -9,6 +9,12 @@ import pandas as pd
 class TaxConfig:
     """Configuration for tax calculations"""
 
+    # TODO this needs to be refactored into a real class
+    # it should track the whole tax system and update a tax dataframe
+    # in the portfolio class.
+    # For now, it's just a simple config with some caveats:
+    # - When you withold tax, but sell at a loss, you will not get tax back
+
     short_term_rate: float = 0.0
     long_term_holding_period: pd.DateOffset = pd.DateOffset(years=1)
     long_term_rate: float = 0.0
@@ -687,7 +693,7 @@ class Portfolio:
                 cost_basis_per_share - lot_cost_basis_per_share
             )
             # check if this is a long term transaction
-            if period <= earliest_long_term_period:
+            if transaction_period <= earliest_long_term_period:
                 long_term_gains += lot_gains
             else:
                 short_term_gains += lot_gains
@@ -707,7 +713,9 @@ class Portfolio:
             + short_term_gains * self.tax_config.short_term_rate
         )
         tax_paid = 0.0
-        if self.tax_config.withhold_tax:
+        if tax_liability <= 0.0:
+            pass
+        elif self.tax_config.withhold_tax:
             tax_paid = tax_liability
             tax_liability = 0.0
 

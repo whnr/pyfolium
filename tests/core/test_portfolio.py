@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 import pandas as pd
-from pytest import raises
+from pytest import approx, raises
 
 from hhfk.core import AssetUniverse, FeeConfig, Portfolio, PortfolioState, TaxConfig
 
@@ -742,52 +742,199 @@ def test_sell_asset_transaction(asset_universe_for_sell_asset_testing):
     )
 
 
-def test_sell_asset_cost_basis_per_share(
+def test_sell_asset_short_term_gains_and_tax_owed(
     portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
 ):
-    assert False
+    """This test covers short terms gain
 
+    If this passes, then cost basis with fees is working as well!
+    """
+    portfolio = portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long
 
-def test_sell_asset_short_term_gains(
-    portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
-):
-    assert False
+    current_period = portfolio.history.index[0]
+
+    portfolio.collect_income_per_period(portfolio.history.index[0])
+    quantity = 10.0
+    portfolio.move_cash(current_period, 101.0)
+    portfolio.buy_asset(period=current_period, symbol="A", quantity=quantity)
+    assert portfolio.cash == 0
+    cost_basis = 101.0 / quantity
+    portfolio.update_history_for_period(current_period)
+
+    current_period = portfolio.history.index[1]
+    portfolio.collect_income_per_period(current_period)
+    portfolio.sell_asset(period=current_period, symbol="A", quantity=quantity)
+    portfolio.update_history_for_period(current_period)
+
+    # the sell transaction does not log a cost basis.
+    # so we calculate the gains with the 1% fee deducted.
+    expected_short_term_gains = (12 * (1 - 0.01) - cost_basis) * quantity
+    assert portfolio.history.loc[current_period][
+        "short_term_gains_in_period"
+    ] == approx(expected_short_term_gains)
+    assert portfolio.tax_owed == approx(expected_short_term_gains * 0.5)
 
 
 def test_sell_asset_long_term_gains(
     portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
 ):
-    assert False
+    portfolio = portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long
+
+    current_period = portfolio.history.index[0]
+
+    portfolio.collect_income_per_period(portfolio.history.index[0])
+    quantity = 10.0
+    portfolio.move_cash(current_period, 101.0)
+    portfolio.buy_asset(period=current_period, symbol="A", quantity=quantity)
+    assert portfolio.cash == 0
+    cost_basis = 101.0 / quantity
+    portfolio.update_history_for_period(current_period)
+
+    current_period = portfolio.history.index[1]
+    portfolio.collect_income_per_period(current_period)
+    portfolio.update_history_for_period(current_period)
+
+    current_period = portfolio.history.index[2]
+    # now we have a long term gain
+    portfolio.collect_income_per_period(current_period)
+    portfolio.sell_asset(period=current_period, symbol="A", quantity=quantity)
+    portfolio.update_history_for_period(current_period)
+
+    # the sell transaction does not log a cost basis.
+    # so we calculate the gains with the 1% fee deducted.
+    expected_short_term_gains = (14 * (1 - 0.01) - cost_basis) * quantity
+    assert portfolio.history.loc[current_period]["long_term_gains_in_period"] == approx(
+        expected_short_term_gains
+    )
 
 
 def test_sell_asset_transaction_amount(
     portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
 ):
-    assert False
+    portfolio = portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long
+
+    current_period = portfolio.history.index[0]
+
+    portfolio.collect_income_per_period(portfolio.history.index[0])
+    quantity = 10.0
+    portfolio.move_cash(current_period, 101.0)
+    portfolio.buy_asset(period=current_period, symbol="A", quantity=quantity)
+    assert portfolio.cash == 0
+    cost_basis = 101.0 / quantity
+    portfolio.update_history_for_period(current_period)
+
+    current_period = portfolio.history.index[1]
+    portfolio.collect_income_per_period(current_period)
+    portfolio.sell_asset(period=current_period, symbol="A", quantity=quantity)
+    portfolio.update_history_for_period(current_period)
+
+    # since we have no withholding we expect the whole money to flow
+    # except for the 1% fee
+    expected_transaction_amount = (12 * (1 - 0.01)) * quantity
+    assert portfolio.cash == approx(expected_transaction_amount)
+    assert portfolio.transactions.iloc[-1]["transaction_amount"] == approx(
+        expected_transaction_amount
+    )
 
 
 def test_sell_asset_tax_paid(
     portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
 ):
-    assert False
+    portfolio = portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long
+    # We want to test withholding
+    portfolio.tax_config.withhold_tax = True
 
+    current_period = portfolio.history.index[0]
 
-def test_sell_asset_tax_owed(
-    portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
-):
-    assert False
+    portfolio.collect_income_per_period(portfolio.history.index[0])
+    quantity = 10.0
+    portfolio.move_cash(current_period, 101.0)
+    portfolio.buy_asset(period=current_period, symbol="A", quantity=quantity)
+    assert portfolio.cash == 0
+    cost_basis = 101.0 / quantity
+    portfolio.update_history_for_period(current_period)
+
+    current_period = portfolio.history.index[1]
+    portfolio.collect_income_per_period(current_period)
+    portfolio.sell_asset(period=current_period, symbol="A", quantity=quantity)
+    portfolio.update_history_for_period(current_period)
+
+    expected_transaction_amount = (12 * (1 - 0.01)) * quantity
+    expected_short_term_gains = (12 * (1 - 0.01) - cost_basis) * quantity
+    expected_tax = expected_short_term_gains * 0.5
+
+    assert portfolio.cash == approx(expected_transaction_amount - expected_tax)
+    assert portfolio.tax_owed == 0
+    assert portfolio.history.loc[current_period]["taxes_paid_in_period"] == approx(
+        expected_tax
+    )
+    assert portfolio.transactions.iloc[-1]["tax_paid"] == approx(expected_tax)
 
 
 def test_sell_asset_negative_capital_gains_with_withholding(
     portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
 ):
-    assert False
+    portfolio = portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long
+    # We want to test withholding
+    portfolio.tax_config.withhold_tax = True
+
+    current_period = portfolio.history.index[0]
+
+    portfolio.collect_income_per_period(portfolio.history.index[0])
+    quantity = 10.0
+    portfolio.move_cash(current_period, 202.0)
+    portfolio.buy_asset(period=current_period, symbol="B", quantity=quantity)
+    assert portfolio.cash == 0
+    cost_basis = 202.0 / quantity
+    portfolio.update_history_for_period(current_period)
+
+    current_period = portfolio.history.index[1]
+    portfolio.collect_income_per_period(current_period)
+    portfolio.sell_asset(period=current_period, symbol="B", quantity=quantity)
+    portfolio.update_history_for_period(current_period)
+
+    expected_proceeds = (15 * (1 - 0.01)) * quantity
+    expected_short_term_gains = (15 * (1 - 0.01) - cost_basis) * quantity
+    expected_tax = expected_short_term_gains * 0.5
+
+    # since we have negative capital gains with withholding
+    # we expect negative tax owed but no "tax" flowing into cash
+    assert portfolio.cash == approx(expected_proceeds)
+    assert portfolio.tax_owed == approx(expected_tax)
+    assert portfolio.history.loc[current_period]["taxes_paid_in_period"] == 0
 
 
 def test_sell_asset_negative_capital_gains_no_withholding(
     portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long,
 ):
-    assert False
+    portfolio = portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long
+    # We want to test withholding
+    assert portfolio.tax_config.withhold_tax == False
+
+    current_period = portfolio.history.index[0]
+
+    portfolio.collect_income_per_period(portfolio.history.index[0])
+    quantity = 10.0
+    portfolio.move_cash(current_period, 202.0)
+    portfolio.buy_asset(period=current_period, symbol="B", quantity=quantity)
+    assert portfolio.cash == 0
+    cost_basis = 202.0 / quantity
+    portfolio.update_history_for_period(current_period)
+
+    current_period = portfolio.history.index[1]
+    portfolio.collect_income_per_period(current_period)
+    portfolio.sell_asset(period=current_period, symbol="B", quantity=quantity)
+    portfolio.update_history_for_period(current_period)
+
+    expected_proceeds = (15 * (1 - 0.01)) * quantity
+    expected_short_term_gains = (15 * (1 - 0.01) - cost_basis) * quantity
+    expected_tax = expected_short_term_gains * 0.5
+
+    # since we have negative capital gains with no withholding
+    # we expect negative tax owed but no "tax" flowing into cash
+    assert portfolio.cash == approx(expected_proceeds)
+    assert portfolio.tax_owed == approx(expected_tax)
+    assert portfolio.history.loc[current_period]["taxes_paid_in_period"] == 0
 
 
 def test_sell_asset_tax_lot_handling_FIFO(portfolio_with_assets):

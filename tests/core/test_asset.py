@@ -58,6 +58,33 @@ def test_asset_creation_errors(sample_asset_data):
         )
 
 
+def test_asset_index_strict_monotonicity():
+    daily_universe = AssetUniverse(data_frequency="D")
+    # index with duplicates
+    i_duplicates = pd.PeriodIndex(["2023-01-01", "2023-01-01", "2023-01-02"], freq="D")
+    # index with non-monotonic data
+    i_non_monotonic = pd.PeriodIndex(
+        ["2023-01-01", "2023-01-03", "2023-01-02"], freq="D"
+    )
+    data = {"price": [1, 2, 3]}
+
+    with raises(ValueError, match="is not strictly monotonic"):
+        Asset(
+            symbol="TEST",
+            assetUniverse=daily_universe,
+            data=pd.DataFrame(data, index=i_duplicates),
+            price_column="price",
+        )
+
+    with raises(ValueError, match="is not strictly monotonic"):
+        Asset(
+            symbol="TEST",
+            assetUniverse=daily_universe,
+            data=pd.DataFrame(data, index=i_non_monotonic),
+            price_column="price",
+        )
+
+
 def test_asset_accessors(sample_asset):
     end_time = sample_asset.end_time
     assert (sample_asset.price == sample_asset.data["price"]).all()

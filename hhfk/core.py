@@ -87,6 +87,11 @@ class Asset:
                 f"does not match data_frequency of {self.assetUniverse.data_frequency}"
             )
 
+        if not self.data.index.is_monotonic_increasing or not self.data.index.is_unique:
+            raise ValueError(
+                f"Period index of asset with symbol {self.symbol} is not strictly monotonic"
+            )
+
         if income_column:
             if income_column not in self.data.columns:
                 raise ValueError(f"Column {income_column} not in data")
@@ -198,7 +203,7 @@ class AssetUniverse:
         """
         Get the period index range for the asset universe
 
-        This spans the start and end time of all assets.
+        It contains all periods between the start and end time of the assets.
 
         Returns
         -------

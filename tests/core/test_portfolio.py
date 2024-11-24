@@ -375,7 +375,6 @@ def test_collect_income_per_period(asset_universe_for_income_testing):
 
 
 def test_collect_income_per_period_negative_gains(asset_universe_for_income_testing):
-    # TODO test with Asset B that has negative gains
     taxConfig = TaxConfig(
         short_term_rate=0.5,
     )

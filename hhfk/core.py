@@ -261,11 +261,14 @@ class Portfolio:
                 Configuration for tax calculations, by default TaxConfig().
 
         Attributes:
+            current_period: The time we're at right now.
+                Shall be advanced strictly monotonously.
+                Is initialized to the first period in the AssetUniverse.
             cash (float): The cash balance of the portfolio.
             tax_owed (float): The tax owed by the portfolio.
-            history (pd.DataFrame): A DataFrame tracking historical cash, taxes, and gains.
-            transactions (pd.DataFrame): A DataFrame containing the transaction history.
-            holdings (pd.DataFrame): A DataFrame tracking the asset holdings over time.
+            history (pd.DataFrame): DataFrame tracking historical cash, taxes, gains.
+            transactions (pd.DataFrame): DataFrame containing the transaction history.
+            holdings (pd.DataFrame): DataFrame tracking the asset holdings over time.
 
         Notes:
             The Portfolio is initialized with a cash balance of 0.0.
@@ -273,9 +276,9 @@ class Portfolio:
             The portfolio state is tracked through the `_portfolio_states` series.
             The order of operations to update the portfolio in each period
             is enforced through the following steps:
-            1. `collect_income_per_period`
+            1. `collect_income`
             2. execute any transactions like `buy` or `move_cash`
-            3. `update_history_per_period`
+            3. `update_history`
 
             Nobody is watching if you have enough cash for any transaction.
             You need to check that yourself.
@@ -292,6 +295,9 @@ class Portfolio:
         self.tax_owed: float = 0.0
 
         period_index = self.asset_universe.get_period_index_range()
+        self._current_period_idx: int = 0
+        self.current_period: pd.Period = period_index[self._current_period_idx]
+
         self.history = pd.DataFrame(
             index=period_index, columns=Portfolio.history_columns
         )
@@ -308,30 +314,31 @@ class Portfolio:
         )
 
         # initialize the portfolio state tracker
-        self._states = pd.Series(index=period_index, data=PortfolioState.COLLECT_INCOME)  # type: ignore
+        self._states = pd.Series(
+            index=period_index, data=PortfolioState.COLLECT_INCOME
+        )  # type: ignore
 
-    def _check_state(self, period: pd.Period, expected_state: PortfolioState):
-        if period > self._states.index.min():
+    def _check_state(self, expected_state: PortfolioState) -> None:
+        if self.current_period > self._states.index.min():
             # TODO add handling for skipped periods
             # TODO We guarantee monotonicity but not single period steps
             # check that the last period was not in the DONE state
-            if self._states[period - 1] != PortfolioState.DONE:
+            if self._states[self.current_period - 1] != PortfolioState.DONE:
                 raise RuntimeError(
                     f"Last period was not in the {PortfolioState.DONE.value} state"
                 )
-        current_state = self._states[period]
+        current_state = self._states[self.current_period]
         if current_state != expected_state:
             raise RuntimeError(
                 f"Portfolio is in the wrong state: {current_state.value}. "
                 f"Expected state: {expected_state.value}"
             )
 
-    def _update_future_holdings(self, period: pd.Period, symbol: str, quantity: float):
+    def _update_future_holdings(self, symbol: str, quantity: float) -> None:
         """
         Update the future holdings of a symbol in the portfolio.
 
         Args:
-            period (pd.Period): The period to start updating the holdings from.
             symbol (str): The symbol of the asset to update the holdings for.
             quantity (float): The quantity of the asset to add to the holdings.
                 Sign indicates the direction of the transaction.
@@ -340,18 +347,19 @@ class Portfolio:
             This function is used to update the holdings of an asset in the future,
             elegantly enabling fewer updates to be made in the future.
         """
-        mask = self.holdings.index >= period
+        mask = self.holdings.index >= self.current_period
         self.holdings.loc[mask, symbol] += quantity
 
     def _register_transaction(self, **kwargs) -> None:
         """Register a transaction in the portfolio.
+
+        It will always register the transaction during the current period.
 
         This will only register a transaction if it is valid.
         before the cash balances or holdings are updated.
 
         Parameters:
             **kwargs: The transaction details. Must contain the following columns:
-                - period: The period of the transaction
                 - type: The type of the transaction.
                   Must be one of `Portfolio.transaction_types`
                 - net_cash_value: The net value of the transaction.
@@ -361,42 +369,61 @@ class Portfolio:
 
         Raises:
             KeyError: If the transaction does not contain the required columns
-            ValueError: If the transaction is invalid (e.g. period or type is not valid)
+            ValueError: If the transaction is invalid
+                (e.g. period is present or type is not valid)
         """
+        if "period" in kwargs:
+            raise ValueError(
+                "Remove the `period` kwarg. We will always use the current period."
+            )
+        transaction = kwargs
+        transaction["period"] = self.current_period
         required_columns = {"period", "type", "transaction_amount"}
-        if not required_columns.issubset(kwargs.keys()):
+        if not required_columns.issubset(transaction.keys()):
             raise KeyError(
-                f"Missing required columns: {required_columns - set(kwargs.keys())}"
+                f"Missing required columns: {required_columns - set(transaction.keys())}"
             )
 
         # Check if the transaction type is valid
-        if kwargs["type"] not in self.transaction_types:
-            raise ValueError(f"Invalid transaction type: {kwargs['type']}")
-
-        # Check if the period is valid
-        if kwargs["period"] not in self.history.index:
-            raise ValueError(f"Invalid period: {kwargs['period']}")
+        if transaction["type"] not in self.transaction_types:
+            raise ValueError(f"Invalid transaction type: {transaction['type']}")
 
         # Check if there are any unexpected columns in the transaction
-        unexpected_columns = set(kwargs.keys()) - set(Portfolio.transaction_columns)
+        unexpected_columns = set(transaction.keys()) - set(
+            Portfolio.transaction_columns
+        )
         if unexpected_columns:
             raise KeyError(f"Unexpected columns in transaction: {unexpected_columns}")
 
         # Concatenate the transaction to the transactions dataframe
         self.transactions = pd.concat(
-            [self.transactions, pd.DataFrame([kwargs]).dropna(axis=1, how="all")],
+            [self.transactions, pd.DataFrame([transaction]).dropna(axis=1, how="all")],
             ignore_index=True,
         )
 
-    def update_history_for_period(self, period: pd.Period):
-        """Update the history of the portfolio for a period.
+    def advance_period(self) -> None:
+        """
+        Advance to the next period.
 
-        This method is meant to be called after all transactions for the period have been
-        processed. It will summarize the transactions and update the history of the
-        portfolio.
+        This method is used to advance to the next period in the portfolio's history.
+        It checks if the previous period is finalized and if the end of the history is
+        reached. If the previous period is not finalized, it raises a RuntimeError.
+        If the end of the history is reached, it raises a StopIteration.
 
-        Args:
-            period (pd.Period): The period to update the history for.
+        """
+        if self._states[self.current_period] != PortfolioState.DONE:
+            raise RuntimeError("Last period was not in the DONE state.")
+        if self._current_period_idx + 1 >= len(self.history.index):
+            raise StopIteration("End of history reached")
+        self._current_period_idx += 1
+        self.current_period = self.history.index[self._current_period_idx]
+
+    def update_history(self) -> None:
+        """Update the history of the portfolio for the current period.
+
+        This method is meant to be called after all transactions for the period
+        have been processed.
+        It will summarize the transactions and update the history of the portfolio.
 
         Notes:
             This method enforces the order of operations for updating the portfolio.
@@ -404,12 +431,14 @@ class Portfolio:
             After running, it will transition the portfolio to the `PortfolioState.DONE`
             state.
         """
-        self._check_state(period, PortfolioState.TRANSACT)
+        self._check_state(PortfolioState.TRANSACT)
 
         # get all transactoins for this period and summarize them
-        period_transactions = self.transactions[self.transactions["period"] == period]
+        period_transactions = self.transactions[
+            self.transactions["period"] == self.current_period
+        ]
 
-        self.history.loc[period] = {  # type: ignore
+        self.history.loc[self.current_period] = {  # type: ignore
             "cash": self.cash,
             "tax_owed": self.tax_owed,
             "long_term_gains_in_period": period_transactions["long_term_gains"].sum(),
@@ -417,16 +446,13 @@ class Portfolio:
             "taxes_paid_in_period": period_transactions["tax_paid"].sum(),
         }
 
-        self._states[period] = PortfolioState.DONE
+        self._states[self.current_period] = PortfolioState.DONE
 
-    def collect_income_per_period(self, period: pd.Period):
-        """Collect all the income for a single period.
-
-        Parameters:
-            period (pd.Period): The period for which to collect income.
+    def collect_income(self):
+        """Collect all the income for the current period.
 
         This method processes the income generated by each asset in the portfolio
-        for a specified period. It creates a transaction for each asset holding
+        for the current period. It creates a transaction for each asset holding
         that has generated income during the period.
 
         The method calculates the long-term and short-term income based on the
@@ -436,19 +462,20 @@ class Portfolio:
 
         Notes:
             If an asset has a negative income, negative income will be collected.
-            No taxes will be paid on negative income, but it will register negative gains.
+            No taxes paid on negative income, but it will register negative gains.
             If you are short on a position, your income will be negative!
         """
-        self._check_state(period, PortfolioState.COLLECT_INCOME)
+        self._check_state(PortfolioState.COLLECT_INCOME)
 
         symbols = (
-            self.holdings.loc[period] * self.asset_universe.income_matrix.loc[period]  # type: ignore
+            self.holdings.loc[self.current_period]
+            * self.asset_universe.income_matrix.loc[self.current_period]  # type: ignore
         )
         symbols = self.holdings.columns[symbols != 0]
 
         for symbol in symbols:
             # get the income
-            income = self.asset_universe.income_matrix.loc[period, symbol]  # type: ignore
+            income = self.asset_universe.income_matrix.loc[self.current_period, symbol]  # type: ignore
 
             # filter transactions to this symbol only buy
             tax_lots = self.transactions[
@@ -459,7 +486,8 @@ class Portfolio:
 
             # filter tax lots to those that are long-term
             earliest_long_term_period = (
-                period.to_timestamp() - self.tax_config.long_term_holding_period
+                self.current_period.to_timestamp()
+                - self.tax_config.long_term_holding_period
             ).to_period(self.asset_universe.data_frequency)
             long_term_quantity = tax_lots.loc[
                 tax_lots["period"] <= earliest_long_term_period,
@@ -487,7 +515,6 @@ class Portfolio:
             transaction_amount = short_term_income + long_term_income - tax_paid
 
             self._register_transaction(
-                period=period,
                 type="income",
                 symbol=symbol,
                 quantity=total_quantity,
@@ -500,13 +527,12 @@ class Portfolio:
             self.tax_owed += tax_liability
             self.cash += transaction_amount
 
-        self._states[period] = PortfolioState.TRANSACT
+        self._states[self.current_period] = PortfolioState.TRANSACT
 
-    def move_cash(self, period: pd.Period, amount: float):
+    def move_cash(self, amount: float):
         """Move cash in or out of the portfolio.
 
         Args:
-            period (pd.Period): The period to move the cash in
             amount (float): The amount of cash to move.
                 Sign indicates the direction of the transaction.
                 Positive values mean a deposit into the portfolio.
@@ -515,7 +541,7 @@ class Portfolio:
         Notes:
             This function will register a transaction in the portfolio.
         """
-        self._check_state(period, PortfolioState.TRANSACT)
+        self._check_state(PortfolioState.TRANSACT)
 
         if amount > 0:
             type = "deposit"
@@ -525,19 +551,17 @@ class Portfolio:
             return
 
         self._register_transaction(
-            period=period,
             type=type,
             transaction_amount=amount,
         )
 
         self.cash += amount
 
-    def buy_asset(self, period: pd.Period, symbol: str, quantity: float):
+    def buy_asset(self, symbol: str, quantity: float):
         """
-        Buy an asset in the portfolio.
+        Buy an asset in the portfolio during the current period.
 
         Args:
-            period (pd.Period): The period to buy the asset in.
             symbol (str): The symbol of the asset to buy.
             quantity (float): The quantity of the asset to buy.
                 Sign indicates the direction of the transaction.
@@ -546,21 +570,20 @@ class Portfolio:
             ValueError: If the quantity is not positive.
 
         Notes:
-            This function will automatically handle the tax implications of the purchase.
+            This function will automatically handle the tax of the purchase.
             It will also update the cash and tax owed balances of the portfolio.
         """
-        self._check_state(period, PortfolioState.TRANSACT)
+        self._check_state(PortfolioState.TRANSACT)
 
         if quantity <= 0:
             raise ValueError("Quantity must be positive")
 
-        price = self.asset_universe.assets[symbol].get_price_at(period)
+        price = self.asset_universe.assets[symbol].get_price_at(self.current_period)
         fee = self.fee_config.calculate_fee(quantity * price)
         cost_basis_per_share = price + fee / quantity
         transaction_amount = -(quantity * price + fee)
 
         self._register_transaction(
-            period=period,
             type="buy",
             symbol=symbol,
             quantity=quantity,
@@ -571,31 +594,31 @@ class Portfolio:
             transaction_amount=transaction_amount,
         )
 
-        self._update_future_holdings(period, symbol, quantity)
+        self._update_future_holdings(symbol, quantity)
 
         self.cash += transaction_amount
 
-    def sell_asset(self, period: pd.Period, symbol: str, quantity: float):
-        """Sell a part of an asset in the portfolio.
+    def sell_asset(self, symbol: str, quantity: float):
+        """Sell a part of an asset in the portfolio during the current period.
 
         It will only sell any portion of the asset that is currently held.
 
         Args:
-            period (pd.Period): The period to sell the asset in
             symbol (str): The symbol of the asset to sell
-            quantity (float): The quantity of the asset to sell. Quantity must be positive.
+            quantity (float): The quantity of the asset to sell.
+                Quantity must be positive.
 
         Notes:
             This function will automatically handle the tax implications of the sale.
             It will also update the cash and tax owed balances of the portfolio.
         """
-        self._check_state(period, PortfolioState.TRANSACT)
+        self._check_state(PortfolioState.TRANSACT)
 
         tax_lots = self.transactions[
             (self.transactions["type"] == "buy")
             & (self.transactions["symbol"] == symbol)
             & (self.transactions["lot_quantity_remaining"] > 0)
-            & (self.transactions["period"] <= period)
+            & (self.transactions["period"] <= self.current_period)
         ]
 
         if self.tax_config.tax_strategy == "FIFO":
@@ -615,7 +638,7 @@ class Portfolio:
                 f"{current_holding_quantity} for symbol {symbol}."
             )
         quantity_to_sell = quantity
-        price = self.asset_universe.assets[symbol].get_price_at(period)
+        price = self.asset_universe.assets[symbol].get_price_at(self.current_period)
         fee = self.fee_config.calculate_fee(quantity * price)
         cost_basis_per_share = price - fee / quantity
 
@@ -623,7 +646,8 @@ class Portfolio:
         short_term_gains = 0
 
         earliest_long_term_period = (
-            period.to_timestamp() - self.tax_config.long_term_holding_period
+            self.current_period.to_timestamp()
+            - self.tax_config.long_term_holding_period
         ).to_period(self.asset_universe.data_frequency)
 
         # sell tax lots until we run out of qunatity_to_sell
@@ -671,7 +695,6 @@ class Portfolio:
         transaction_amount = quantity * price - fee - tax_paid
 
         self._register_transaction(
-            period=period,
             type="sell",
             symbol=symbol,
             quantity=quantity,
@@ -684,26 +707,24 @@ class Portfolio:
         )
 
         # important: quantity_to_sell is negative
-        self._update_future_holdings(period, symbol, -quantity)
+        self._update_future_holdings(symbol, -quantity)
 
         self.cash += transaction_amount
         self.tax_owed += tax_liability
 
-    def pay_tax(self, period: pd.Period, amount: float | None = None):
+    def pay_tax(self, amount: float | None = None):
         """Pay taxes owed.
 
         If no amount is provided, all taxes owed will be paid.
 
         Args:
-            period: pd.Period
-                The period to pay taxes for
             amount: float, optional
                 The amount of taxes to pay.
 
         Raises:
             ValueError: If amount is greater than tax owed or negative
         """
-        self._check_state(period, PortfolioState.TRANSACT)
+        self._check_state(PortfolioState.TRANSACT)
 
         if amount is None:
             amount = self.tax_owed
@@ -716,7 +737,6 @@ class Portfolio:
             return
 
         self._register_transaction(
-            period=period,
             type="pay_tax",
             transaction_amount=-amount,
         )

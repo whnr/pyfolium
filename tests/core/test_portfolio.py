@@ -1,5 +1,3 @@
-from copy import deepcopy
-
 import pandas as pd
 from pytest import approx, raises
 
@@ -58,13 +56,21 @@ def test_portfolio_init_with_no_assets_raises():
 
     # Adding an empty universe shall raise an error
     with raises(ValueError):
-        portfolio = Portfolio(asset_universe=asset_universe)
+        Portfolio(asset_universe=asset_universe)
 
 
 def test_minimal_portfolio_init(asset_universe_with_assets):
     portfolio = Portfolio(asset_universe=asset_universe_with_assets)
+
+    assert (
+        portfolio.current_period
+        == asset_universe_with_assets.get_period_index_range()[0]
+    )
+    assert isinstance(portfolio.current_period, pd.Period)
+
     assert portfolio.cash == 0.0
     assert isinstance(portfolio.cash, float)
+
     assert portfolio.tax_owed == 0.0
     assert isinstance(portfolio.tax_owed, float)
     assert isinstance(portfolio.tax_config, TaxConfig)
@@ -86,52 +92,50 @@ def test_minimal_portfolio_init(asset_universe_with_assets):
 def test_portfolio_basic_states(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
 
-    current_period = portfolio.history.index[0]
+    current_period = portfolio.current_period
 
     assert portfolio._states[current_period] == PortfolioState.COLLECT_INCOME
 
-    portfolio.collect_income_per_period(current_period)
+    portfolio.collect_income()
     assert portfolio._states[current_period] == PortfolioState.TRANSACT
 
-    portfolio.update_history_for_period(current_period)
+    portfolio.update_history()
     assert portfolio._states[current_period] == PortfolioState.DONE
 
-    current_period = portfolio.history.index[1]
+    portfolio.advance_period()
+    current_period = portfolio.current_period
     assert portfolio._states[current_period] == PortfolioState.COLLECT_INCOME
 
 
 def test_portfolio_wrong_state_errors(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
 
-    current_period = portfolio.history.index[0]
-
     # attempt to transact before collecting income
     with raises(
         RuntimeError, match="wrong state: COLLECT_INCOME. Expected state: TRANSACT"
     ):
-        portfolio.move_cash(current_period, 1.0)
+        portfolio.move_cash(1.0)
 
-    portfolio.collect_income_per_period(current_period)
+    portfolio.collect_income()
     # attempt to collect income again
     with raises(
         RuntimeError, match="wrong state: TRANSACT. Expected state: COLLECT_INCOME"
     ):
-        portfolio.collect_income_per_period(current_period)
+        portfolio.collect_income()
 
-    portfolio.update_history_for_period(current_period)
+    portfolio.update_history()
     with raises(
         RuntimeError, match="wrong state: DONE. Expected state: COLLECT_INCOME"
     ):
-        portfolio.collect_income_per_period(current_period)
+        portfolio.collect_income()
 
 
 def test_portfolio_state_incomplete_periods_errors(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
 
     # attempt to start in the wrong period
-    current_period = portfolio.history.index[1]
     with raises(RuntimeError, match="Last period was not in the DONE state"):
-        portfolio.collect_income_per_period(current_period)
+        portfolio.advance_period()
 
 
 def test_update_future_holdings_change_whole_future(portfolio_with_assets_taxes_fees):
@@ -140,8 +144,7 @@ def test_update_future_holdings_change_whole_future(portfolio_with_assets_taxes_
     symbol_2 = "TEST2"
 
     # updates all holdings in the future
-    current_period = portfolio.history.index[0]
-    portfolio._update_future_holdings(current_period, symbol_1, 1.0)
+    portfolio._update_future_holdings(symbol_1, 1.0)
     assert portfolio.holdings[symbol_1].all() == 1.0
     assert portfolio.holdings[symbol_2].all() == 0.0
 
@@ -150,10 +153,10 @@ def test_update_future_holdings_keep_past_untouched(portfolio_with_assets_taxes_
     portfolio = portfolio_with_assets_taxes_fees
     symbol_1 = "TEST"
 
-    current_period = portfolio.history.index[0]
-    portfolio._update_future_holdings(current_period, symbol_1, 1.0)
-    current_period = portfolio.history.index[1]
-    portfolio._update_future_holdings(current_period, symbol_1, 2.0)
+    portfolio.current_period = portfolio.history.index[0]
+    portfolio._update_future_holdings(symbol_1, 1.0)
+    portfolio.current_period = portfolio.history.index[1]
+    portfolio._update_future_holdings(symbol_1, 2.0)
     assert (portfolio.holdings.iloc[1:][symbol_1] == 3.0).all()
     assert portfolio.holdings.iloc[0][symbol_1] == 1.0
 
@@ -161,30 +164,27 @@ def test_update_future_holdings_keep_past_untouched(portfolio_with_assets_taxes_
 def test_update_future_holdings_reduce_holdings(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
     symbol_1 = "TEST"
-    symbol_2 = "TEST2"
 
-    current_period = portfolio.history.index[0]
-    portfolio._update_future_holdings(current_period, symbol_1, 1.0)
-    current_period = portfolio.history.index[1]
-    portfolio._update_future_holdings(current_period, symbol_1, 2.0)
-    current_period = portfolio.history.index[2]
-    portfolio._update_future_holdings(current_period, symbol_1, -1.0)
+    portfolio.current_period = portfolio.history.index[0]
+    portfolio._update_future_holdings(symbol_1, 1.0)
+    portfolio.current_period = portfolio.history.index[1]
+    portfolio._update_future_holdings(symbol_1, 2.0)
+    portfolio.current_period = portfolio.history.index[2]
+    portfolio._update_future_holdings(symbol_1, -1.0)
     assert (portfolio.holdings.iloc[2:][symbol_1] == 2.0).all()
 
 
 def test_register_transaction(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
     # add a minimal valid transaction
     portfolio._register_transaction(
-        period=current_period,
         type="deposit",
         transaction_amount=1.0,
     )
 
     assert len(portfolio.transactions) == 1
-    assert portfolio.transactions.iloc[0]["period"] == current_period
+    assert portfolio.transactions.iloc[0]["period"] == portfolio.current_period
     assert portfolio.transactions.iloc[0]["type"] == "deposit"
     assert portfolio.transactions.iloc[0]["transaction_amount"] == 1.0
 
@@ -192,7 +192,6 @@ def test_register_transaction(portfolio_with_assets_taxes_fees):
     # this is non-sense, but this methods job is just to register
     # the transaction
     portfolio._register_transaction(
-        period=current_period,
         type="sell",
         transaction_amount=1.0,
         symbol="TEST",
@@ -207,7 +206,7 @@ def test_register_transaction(portfolio_with_assets_taxes_fees):
     )
 
     assert len(portfolio.transactions) == 2
-    assert portfolio.transactions.iloc[1]["period"] == current_period
+    assert portfolio.transactions.iloc[1]["period"] == portfolio.current_period
     assert portfolio.transactions.iloc[1]["type"] == "sell"
     assert portfolio.transactions.iloc[1]["transaction_amount"] == 1.0
     assert portfolio.transactions.iloc[1]["symbol"] == "TEST"
@@ -223,75 +222,73 @@ def test_register_transaction(portfolio_with_assets_taxes_fees):
 
 def test_register_transaction_missing_minimum_colums(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
     with raises(KeyError, match="Missing required columns: {'transaction_amount'}"):
-        portfolio._register_transaction(period=current_period, type="deposit")
+        portfolio._register_transaction(type="deposit")
 
 
-def test_register_transaction_invalid_type(portfolio_with_assets_taxes_fees):
+def test_register_transaction_raises_if_period_provided(
+    portfolio_with_assets_taxes_fees,
+):
+    """Test that we raise, even if the correct period is provided.
+    We don't want people to provide the period manually."""
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
-    with raises(ValueError, match="Invalid transaction type: invalid_type"):
+    with raises(
+        ValueError,
+        match="Remove the `period` kwarg. We will always use the current period.",
+    ):
         portfolio._register_transaction(
-            period=current_period,
-            type="invalid_type",
+            period=portfolio.current_period,
+            type="deposit",
             transaction_amount=1.0,
         )
 
 
-def test_register_transaction_invalid_period(portfolio_with_assets_taxes_fees):
+def test_register_transaction_invalid_type(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    invalid_period = pd.Period("1970-01")
 
-    with raises(ValueError, match="Invalid period: 1970-01"):
+    with raises(ValueError, match="Invalid transaction type: invalid_type"):
         portfolio._register_transaction(
-            period=invalid_period,
-            type="deposit",
+            type="invalid_type",
             transaction_amount=1.0,
         )
 
 
 def test_register_transaction_unexpected_columns(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
     with raises(
         KeyError, match="Unexpected columns in transaction: {'unexpected_column'}"
     ):
         portfolio._register_transaction(
-            period=current_period,
             type="deposit",
             transaction_amount=1.0,
             unexpected_column=1.0,
         )
 
 
-def test_update_history_for_period(portfolio_with_assets_taxes_fees):
+def test_update_history(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    previous_period = portfolio.history.index[0]
-    current_period = portfolio.history.index[1]
 
-    portfolio.collect_income_per_period(previous_period)
+    portfolio.collect_income()
     # Add mock data to the portfolio that should be ignored
     portfolio._register_transaction(
-        period=previous_period,
         type="sell",
         transaction_amount=500.0,
         long_term_gains=1000.0,
         short_term_gains=2000.0,
         tax_paid=3000.0,
     )
-    portfolio.update_history_for_period(previous_period)
+    portfolio.update_history()
+    portfolio.advance_period()
 
     # Get the portfolio in the right state
-    portfolio.collect_income_per_period(current_period)
+    portfolio.collect_income()
     # Add mock data to the portfolio
     portfolio.cash = 100.0
     portfolio.tax_owed = 10.0
     portfolio._register_transaction(
-        period=current_period,
         type="sell",
         transaction_amount=500.0,
         long_term_gains=10.0,
@@ -299,14 +296,15 @@ def test_update_history_for_period(portfolio_with_assets_taxes_fees):
         tax_paid=30.0,
     )
     portfolio._register_transaction(
-        period=current_period,
         type="sell",
         transaction_amount=500.0,
         long_term_gains=1.0,
         short_term_gains=2.0,
         tax_paid=3.0,
     )
-    portfolio.update_history_for_period(current_period)
+    portfolio.update_history()
+
+    current_period = portfolio.current_period
     assert portfolio.history.loc[current_period]["cash"] == 100.0
     assert portfolio.history.loc[current_period]["tax_owed"] == 10.0
     assert portfolio.history.loc[current_period]["long_term_gains_in_period"] == 11.0
@@ -316,65 +314,66 @@ def test_update_history_for_period(portfolio_with_assets_taxes_fees):
 
 def test_update_history_transitions_to_done_state(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
-    portfolio.collect_income_per_period(current_period)
-    portfolio.update_history_for_period(current_period)
-    assert portfolio._states[current_period] == PortfolioState.DONE
+    portfolio.collect_income()
+    portfolio.update_history()
+    assert portfolio._states[portfolio.current_period] == PortfolioState.DONE
 
 
 def test_update_history_raised_if_not_in_transact_state(
     portfolio_with_assets_taxes_fees,
 ):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
     with raises(
         RuntimeError,
         match="wrong state: COLLECT_INCOME. Expected state: TRANSACT",
     ):
-        portfolio.update_history_for_period(current_period)
+        portfolio.update_history()
 
-    portfolio._states[current_period] = PortfolioState.DONE
+    portfolio._states[portfolio.current_period] = PortfolioState.DONE
     with raises(
         RuntimeError,
         match="wrong state: DONE. Expected state: TRANSACT",
     ):
-        portfolio.update_history_for_period(current_period)
+        portfolio.update_history()
 
 
-def test_collect_income_per_period(asset_universe_for_income_testing):
+def test_collect_income(asset_universe_for_income_testing):
     # simple setup: 2 assets, 3 periods
     asset_universe = asset_universe_for_income_testing
 
     portfolio = Portfolio(asset_universe=asset_universe)
-    current_period = portfolio.history.index[0]
+
     # we are not holding anything yet and expect no income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.move_cash(current_period, 100)
-    portfolio.buy_asset(period=current_period, symbol="A", quantity=10.0)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.move_cash(100)
+    portfolio.buy_asset(symbol="A", quantity=10.0)
+    portfolio.update_history()
     # we are holding one asset and expect no income because we just bought it
+    current_period = portfolio.current_period
     assert portfolio.history.loc[current_period]["long_term_gains_in_period"] == 0.0
     assert portfolio.history.loc[current_period]["short_term_gains_in_period"] == 0.0
 
-    current_period = portfolio.history.index[1]
+    portfolio.advance_period()
     # we are holding 10 of `A` and expect 20 short term income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.sell_asset(period=current_period, symbol="A", quantity=10.0)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.sell_asset(symbol="A", quantity=10.0)
+    portfolio.update_history()
+
+    current_period = portfolio.current_period
     assert portfolio.history.loc[current_period]["long_term_gains_in_period"] == 0.0
     assert portfolio.history.loc[current_period]["short_term_gains_in_period"] == 20.0
     assert portfolio.cash == 120
 
-    current_period = portfolio.history.index[2]
+    portfolio.advance_period()
     # we're back to no holdings. Don't expect any extra income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.update_history()
     assert portfolio.cash == 120
 
 
-def test_collect_income_per_period_negative_gains(asset_universe_for_income_testing):
+def test_collect_income_negative_gains(asset_universe_for_income_testing):
     taxConfig = TaxConfig(
         short_term_rate=0.5,
     )
@@ -382,25 +381,27 @@ def test_collect_income_per_period_negative_gains(asset_universe_for_income_test
         asset_universe=asset_universe_for_income_testing, tax_config=taxConfig
     )
 
-    current_period = portfolio.history.index[0]
-    portfolio.collect_income_per_period(current_period)
+    portfolio.collect_income()
     # We are buying asset B, price 20
     # Negative gains of -4, -5, -6 over the 3 periods
     quantity = 5
-    portfolio.move_cash(current_period, 100)
-    portfolio.buy_asset(period=current_period, symbol="B", quantity=quantity)
-    portfolio.update_history_for_period(current_period)
+    portfolio.move_cash(100)
+    portfolio.buy_asset(symbol="B", quantity=quantity)
+    portfolio.update_history()
+    current_period = portfolio.current_period
     assert portfolio.history.loc[current_period]["short_term_gains_in_period"] == 0.0
     assert portfolio.cash == 0
-    current_period = portfolio.history.index[1]
-    portfolio.collect_income_per_period(current_period)
+
+    portfolio.advance_period()
+    portfolio.collect_income()
     assert portfolio.tax_owed == 0
     assert portfolio.cash == -5 * quantity
-    portfolio.update_history_for_period(current_period)
+    portfolio.update_history()
+    current_period = portfolio.current_period
     assert portfolio.history.loc[current_period]["short_term_gains_in_period"] == -25.0
 
 
-def test_collect_income_per_period_short_long_term(asset_universe_for_income_testing):
+def test_collect_income_short_long_term(asset_universe_for_income_testing):
     # simple setup: 2 assets, 3 periods
     asset_universe = asset_universe_for_income_testing
     tax_config = TaxConfig(
@@ -408,31 +409,32 @@ def test_collect_income_per_period_short_long_term(asset_universe_for_income_tes
     )
 
     portfolio = Portfolio(asset_universe=asset_universe, tax_config=tax_config)
-    current_period = portfolio.history.index[0]
     # we are not holding anything yet and expect no income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.move_cash(current_period, 100)
-    portfolio.buy_asset(period=current_period, symbol="A", quantity=10.0)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.move_cash(100)
+    portfolio.buy_asset(symbol="A", quantity=10.0)
+    portfolio.update_history()
+    portfolio.advance_period()
 
-    current_period = portfolio.history.index[1]
     # we are holding 10 of `A` and expect 20 short term income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.update_history()
+    current_period = portfolio.current_period
     assert portfolio.history.loc[current_period]["long_term_gains_in_period"] == 0.0
     assert portfolio.history.loc[current_period]["short_term_gains_in_period"] == 20.0
     assert portfolio.cash == 20
 
-    current_period = portfolio.history.index[2]
+    portfolio.advance_period()
     # we're now in the long term holding period and expect 30 long term income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.update_history()
+    current_period = portfolio.current_period
     assert portfolio.history.loc[current_period]["long_term_gains_in_period"] == 30.0
     assert portfolio.history.loc[current_period]["short_term_gains_in_period"] == 0.0
     assert portfolio.cash == 50
 
 
-def test_collect_income_per_period_short_long_term_50tax(
+def test_collect_income_short_long_term_50tax(
     asset_universe_for_income_testing,
 ):
     # simple setup: 2 assets, 3 periods
@@ -445,33 +447,35 @@ def test_collect_income_per_period_short_long_term_50tax(
     )
 
     portfolio = Portfolio(asset_universe=asset_universe, tax_config=tax_config)
-    current_period = portfolio.history.index[0]
     # we are not holding anything yet and expect no income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.move_cash(current_period, 100)
-    portfolio.buy_asset(period=current_period, symbol="A", quantity=10.0)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.move_cash(100)
+    portfolio.buy_asset(symbol="A", quantity=10.0)
+    portfolio.update_history()
 
-    current_period = portfolio.history.index[1]
+    portfolio.advance_period()
+
     # we are holding 10 of `A` and expect 20 short term income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.update_history()
+    current_period = portfolio.current_period
     assert portfolio.history.loc[current_period]["short_term_gains_in_period"] == 20.0
     assert portfolio.history.loc[current_period]["taxes_paid_in_period"] == 0
     assert portfolio.cash == 20
     assert portfolio.tax_owed == 10
 
-    current_period = portfolio.history.index[2]
+    portfolio.advance_period()
     # we're now in the long term holding period and expect 30 long term income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.update_history()
+    current_period = portfolio.current_period
     assert portfolio.history.loc[current_period]["long_term_gains_in_period"] == 30.0
     assert portfolio.history.loc[current_period]["taxes_paid_in_period"] == 0
     assert portfolio.cash == 50
     assert portfolio.tax_owed == 25
 
 
-def test_collect_income_per_period_short_long_term_tax_withholding(
+def test_collect_income_short_long_term_tax_withholding(
     asset_universe_for_income_testing,
 ):
     # simple setup: 2 assets, 3 periods
@@ -485,33 +489,34 @@ def test_collect_income_per_period_short_long_term_tax_withholding(
     )
 
     portfolio = Portfolio(asset_universe=asset_universe, tax_config=tax_config)
-    current_period = portfolio.history.index[0]
     # we are not holding anything yet and expect no income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.move_cash(current_period, 100)
-    portfolio.buy_asset(period=current_period, symbol="A", quantity=10.0)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.move_cash(100)
+    portfolio.buy_asset(symbol="A", quantity=10.0)
+    portfolio.update_history()
 
-    current_period = portfolio.history.index[1]
+    portfolio.advance_period()
     # we are holding 10 of `A` and expect 20 short term income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.update_history()
+    current_period = portfolio.current_period
     assert portfolio.history.loc[current_period]["short_term_gains_in_period"] == 20.0
     assert portfolio.history.loc[current_period]["taxes_paid_in_period"] == 10.0
     assert portfolio.cash == 10.0
     assert portfolio.tax_owed == 0.0
 
-    current_period = portfolio.history.index[2]
+    portfolio.advance_period()
     # we're now in the long term holding period and expect 30 long term income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.update_history()
+    current_period = portfolio.current_period
     assert portfolio.history.loc[current_period]["long_term_gains_in_period"] == 30.0
     assert portfolio.history.loc[current_period]["taxes_paid_in_period"] == 15.0
     assert portfolio.cash == 25.0
     assert portfolio.tax_owed == 0.0
 
 
-def test_collect_income_per_period_transaction(asset_universe_for_income_testing):
+def test_collect_income_transaction(asset_universe_for_income_testing):
     # The previous test is already making sure that most of the logic works.
     # Let's just make sure that we fill all the expected fields here.abs
 
@@ -520,20 +525,19 @@ def test_collect_income_per_period_transaction(asset_universe_for_income_testing
 
     quantity = 10.0
     portfolio = Portfolio(asset_universe=asset_universe)
-    current_period = portfolio.history.index[0]
     # we are not holding anything yet and expect no income
-    portfolio.collect_income_per_period(current_period)
-    portfolio.move_cash(current_period, 100)
-    portfolio.buy_asset(period=current_period, symbol="A", quantity=quantity)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.move_cash(100)
+    portfolio.buy_asset(symbol="A", quantity=quantity)
+    portfolio.update_history()
 
-    current_period = portfolio.history.index[1]
+    portfolio.advance_period()
     # we are holding 10 of `A` and expect 20 short term income
-    portfolio.collect_income_per_period(current_period)
+    portfolio.collect_income()
 
     assert_transaction(
         transaction=portfolio.transactions.iloc[2],
-        period=current_period,
+        period=portfolio.current_period,
         type="income",
         symbol="A",
         quantity=quantity,
@@ -544,58 +548,55 @@ def test_collect_income_per_period_transaction(asset_universe_for_income_testing
     )
 
 
-def test_collect_income_per_period_states(portfolio_with_assets_taxes_fees):
+def test_collect_income_states(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
-    portfolio.collect_income_per_period(current_period)
-    assert portfolio._states[current_period] == PortfolioState.TRANSACT
+    portfolio.collect_income()
+    assert portfolio._states[portfolio.current_period] == PortfolioState.TRANSACT
 
     with raises(
         RuntimeError, match="wrong state: TRANSACT. Expected state: COLLECT_INCOME"
     ):
-        portfolio.collect_income_per_period(current_period)
+        portfolio.collect_income()
 
-    portfolio.update_history_for_period(current_period)
+    portfolio.update_history()
     with raises(
         RuntimeError, match="wrong state: DONE. Expected state: COLLECT_INCOME"
     ):
-        portfolio.collect_income_per_period(current_period)
+        portfolio.collect_income()
 
 
 def test_move_cash(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
-    portfolio.collect_income_per_period(current_period)
-    portfolio.move_cash(current_period, 100)
+    portfolio.collect_income()
+    portfolio.move_cash(100)
     assert portfolio.cash == 100
-    portfolio.move_cash(current_period, 50)
+    portfolio.move_cash(50)
     assert portfolio.cash == 150
-    portfolio.move_cash(current_period, -50)
+    portfolio.move_cash(-50)
     assert portfolio.cash == 100
-    portfolio.move_cash(current_period, 0.0)
+    portfolio.move_cash(0.0)
     assert portfolio.cash == 100
 
 
 def test_move_cash_transaction(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
-    portfolio.collect_income_per_period(current_period)
+    portfolio.collect_income()
     # Resgister two transactions
-    portfolio.move_cash(current_period, 100)
-    portfolio.move_cash(current_period, -100)
+    portfolio.move_cash(100)
+    portfolio.move_cash(-100)
 
     assert_transaction(
         transaction=portfolio.transactions.iloc[0],
-        period=current_period,
+        period=portfolio.current_period,
         type="deposit",
         transaction_amount=100.0,
     )
     assert_transaction(
         transaction=portfolio.transactions.iloc[1],
-        period=current_period,
+        period=portfolio.current_period,
         type="withdrawal",
         transaction_amount=-100.0,
     )
@@ -603,31 +604,30 @@ def test_move_cash_transaction(portfolio_with_assets_taxes_fees):
 
 def test_move_cash_states(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
     with raises(
         RuntimeError, match="wrong state: COLLECT_INCOME. Expected state: TRANSACT"
     ):
-        portfolio.move_cash(current_period, 100)
+        portfolio.move_cash(100)
 
-    portfolio.collect_income_per_period(current_period)
-    portfolio.move_cash(current_period, 100)
-    assert portfolio._states[current_period] == PortfolioState.TRANSACT
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.move_cash(100)
+    assert portfolio._states[portfolio.current_period] == PortfolioState.TRANSACT
+    portfolio.update_history()
 
     with raises(RuntimeError, match="wrong state: DONE. Expected state: TRANSACT"):
-        portfolio.move_cash(current_period, 100)
+        portfolio.move_cash(100)
 
 
 def test_buy_asset(portfolio_with_assets):
     portfolio = portfolio_with_assets
-    period = portfolio.history.index[0]
-    portfolio.collect_income_per_period(period)
+    period = portfolio.current_period
+    portfolio.collect_income()
 
     quantity = 10.0
     expected_cost = portfolio.asset_universe.price_matrix.loc[period, "TEST"] * quantity
     portfolio.cash += expected_cost
-    portfolio.buy_asset(period, "TEST", quantity)
+    portfolio.buy_asset("TEST", quantity)
 
     assert portfolio.holdings.iloc[0]["TEST"] == quantity
     assert portfolio.cash == 0
@@ -635,23 +635,22 @@ def test_buy_asset(portfolio_with_assets):
 
 def test_buy_asset_transaction(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    period = portfolio.history.index[0]
-    portfolio.collect_income_per_period(period)
+    portfolio.collect_income()
 
     quantity = 10.0
-    price = portfolio.asset_universe.price_matrix.loc[period, "TEST"]
+    price = portfolio.asset_universe.price_matrix.loc[portfolio.current_period, "TEST"]
     expected_fee = portfolio.fee_config.calculate_fee(quantity * price)
     expected_cost = price * quantity + expected_fee
     expected_cost_basis_per_share = expected_cost / quantity
     portfolio.cash += expected_cost
-    portfolio.buy_asset(period, "TEST", quantity)
+    portfolio.buy_asset("TEST", quantity)
 
     assert portfolio.cash == 0
     assert len(portfolio.transactions) == 1
 
     assert_transaction(
         transaction=portfolio.transactions.iloc[0],
-        period=period,
+        period=portfolio.current_period,
         type="buy",
         symbol="TEST",
         quantity=quantity,
@@ -665,66 +664,65 @@ def test_buy_asset_transaction(portfolio_with_assets_taxes_fees):
 
 def test_buy_asset_quantity_errors(portfolio_with_assets):
     portfolio = portfolio_with_assets
-    period = portfolio.history.index[0]
-    portfolio.collect_income_per_period(period)
+    portfolio.collect_income()
 
     with raises(ValueError):
-        portfolio.buy_asset(period, "TEST", 0.0)
+        portfolio.buy_asset("TEST", 0.0)
 
     with raises(ValueError):
-        portfolio.buy_asset(period, "TEST", -1.0)
+        portfolio.buy_asset("TEST", -1.0)
 
     with raises(KeyError):
-        portfolio.buy_asset(period, "UNKNOWN", 10.0)
+        portfolio.buy_asset("UNKNOWN", 10.0)
 
 
 def test_buy_asset_states(portfolio_with_assets):
     portfolio = portfolio_with_assets
-    period = portfolio.history.index[0]
 
     with raises(
         RuntimeError, match="wrong state: COLLECT_INCOME. Expected state: TRANSACT"
     ):
-        portfolio.buy_asset(period, "TEST", 10.0)
+        portfolio.buy_asset("TEST", 10.0)
 
-    portfolio.collect_income_per_period(period)
-    portfolio.buy_asset(period, "TEST", 10.0)
-    assert portfolio._states[period] == PortfolioState.TRANSACT
+    portfolio.collect_income()
+    portfolio.buy_asset("TEST", 10.0)
+    assert portfolio._states[portfolio.current_period] == PortfolioState.TRANSACT
 
 
 def test_sell_asset(asset_universe_for_sell_asset_testing):
     portfolio = Portfolio(asset_universe=asset_universe_for_sell_asset_testing)
 
-    period = portfolio.history.index[0]
-    portfolio.collect_income_per_period(period)
-    portfolio.move_cash(period, 100)
-    portfolio.buy_asset(period, "A", 10.0)
+    portfolio.collect_income()
+    portfolio.move_cash(100)
+    portfolio.buy_asset("A", 10.0)
     assert portfolio.cash == 0.0
-    portfolio.update_history_for_period(period)
-    period = portfolio.history.index[1]
-    portfolio.collect_income_per_period(period)
+    portfolio.update_history()
 
-    portfolio.sell_asset(period, "A", 5.0)
+    portfolio.advance_period()
+    portfolio.collect_income()
+
+    portfolio.sell_asset("A", 5.0)
     assert portfolio.cash == 5.0 * 12.0
-    portfolio.update_history_for_period(period)
+    portfolio.update_history()
+
+    current_period = portfolio.current_period
     assert portfolio.holdings.iloc[1]["A"] == 5.0
-    assert portfolio.history.loc[period]["short_term_gains_in_period"] == 10.0
+    assert portfolio.history.loc[current_period]["short_term_gains_in_period"] == 10.0
 
 
 def test_sell_asset_transaction(asset_universe_for_sell_asset_testing):
     portfolio = Portfolio(asset_universe=asset_universe_for_sell_asset_testing)
 
-    period = portfolio.history.index[0]
-    portfolio.collect_income_per_period(period)
+    portfolio.collect_income()
 
-    portfolio.buy_asset(period, "A", 10.0)
-    portfolio.sell_asset(period, "A", 5.0)
+    portfolio.buy_asset("A", 10.0)
+    portfolio.sell_asset("A", 5.0)
 
     assert len(portfolio.transactions) == 2
 
     assert_transaction(
         transaction=portfolio.transactions.iloc[1],
-        period=period,
+        period=portfolio.current_period,
         type="sell",
         symbol="A",
         quantity=5.0,
@@ -746,25 +744,23 @@ def test_sell_asset_short_term_gains_and_tax_owed(
     """
     portfolio = portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long
 
-    current_period = portfolio.history.index[0]
-
-    portfolio.collect_income_per_period(portfolio.history.index[0])
+    portfolio.collect_income()
     quantity = 10.0
-    portfolio.move_cash(current_period, 101.0)
-    portfolio.buy_asset(period=current_period, symbol="A", quantity=quantity)
+    portfolio.move_cash(101.0)
+    portfolio.buy_asset(symbol="A", quantity=quantity)
     assert portfolio.cash == 0
     cost_basis = 101.0 / quantity
-    portfolio.update_history_for_period(current_period)
+    portfolio.update_history()
 
-    current_period = portfolio.history.index[1]
-    portfolio.collect_income_per_period(current_period)
-    portfolio.sell_asset(period=current_period, symbol="A", quantity=quantity)
-    portfolio.update_history_for_period(current_period)
+    portfolio.advance_period()
+    portfolio.collect_income()
+    portfolio.sell_asset(symbol="A", quantity=quantity)
+    portfolio.update_history()
 
     # the sell transaction does not log a cost basis.
     # so we calculate the gains with the 1% fee deducted.
     expected_short_term_gains = (12 * (1 - 0.01) - cost_basis) * quantity
-    assert portfolio.history.loc[current_period][
+    assert portfolio.history.loc[portfolio.current_period][
         "short_term_gains_in_period"
     ] == approx(expected_short_term_gains)
     assert portfolio.tax_owed == approx(expected_short_term_gains * 0.5)
@@ -775,25 +771,24 @@ def test_sell_asset_long_term_gains(
 ):
     portfolio = portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long
 
-    current_period = portfolio.history.index[0]
-
-    portfolio.collect_income_per_period(portfolio.history.index[0])
+    portfolio.collect_income()
     quantity = 10.0
-    portfolio.move_cash(current_period, 101.0)
-    portfolio.buy_asset(period=current_period, symbol="A", quantity=quantity)
+    portfolio.move_cash(101.0)
+    portfolio.buy_asset(symbol="A", quantity=quantity)
     assert portfolio.cash == 0
     cost_basis = 101.0 / quantity
-    portfolio.update_history_for_period(current_period)
+    portfolio.update_history()
 
-    current_period = portfolio.history.index[1]
-    portfolio.collect_income_per_period(current_period)
-    portfolio.update_history_for_period(current_period)
+    portfolio.advance_period()
+    portfolio.collect_income()
+    portfolio.update_history()
 
-    current_period = portfolio.history.index[2]
+    portfolio.advance_period()
     # now we have a long term gain
-    portfolio.collect_income_per_period(current_period)
-    portfolio.sell_asset(period=current_period, symbol="A", quantity=quantity)
-    portfolio.update_history_for_period(current_period)
+    portfolio.collect_income()
+    portfolio.sell_asset(symbol="A", quantity=quantity)
+    portfolio.update_history()
+    current_period = portfolio.current_period
 
     # the sell transaction does not log a cost basis.
     # so we calculate the gains with the 1% fee deducted.
@@ -808,20 +803,17 @@ def test_sell_asset_transaction_amount(
 ):
     portfolio = portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long
 
-    current_period = portfolio.history.index[0]
-
-    portfolio.collect_income_per_period(portfolio.history.index[0])
+    portfolio.collect_income()
     quantity = 10.0
-    portfolio.move_cash(current_period, 101.0)
-    portfolio.buy_asset(period=current_period, symbol="A", quantity=quantity)
+    portfolio.move_cash(101.0)
+    portfolio.buy_asset(symbol="A", quantity=quantity)
     assert portfolio.cash == 0
-    cost_basis = 101.0 / quantity
-    portfolio.update_history_for_period(current_period)
+    portfolio.update_history()
 
-    current_period = portfolio.history.index[1]
-    portfolio.collect_income_per_period(current_period)
-    portfolio.sell_asset(period=current_period, symbol="A", quantity=quantity)
-    portfolio.update_history_for_period(current_period)
+    portfolio.advance_period()
+    portfolio.collect_income()
+    portfolio.sell_asset(symbol="A", quantity=quantity)
+    portfolio.update_history()
 
     # since we have no withholding we expect the whole money to flow
     # except for the 1% fee
@@ -839,25 +831,24 @@ def test_sell_asset_tax_paid(
     # We want to test withholding
     portfolio.tax_config.withhold_tax = True
 
-    current_period = portfolio.history.index[0]
-
-    portfolio.collect_income_per_period(portfolio.history.index[0])
+    portfolio.collect_income()
     quantity = 10.0
-    portfolio.move_cash(current_period, 101.0)
-    portfolio.buy_asset(period=current_period, symbol="A", quantity=quantity)
+    portfolio.move_cash(101.0)
+    portfolio.buy_asset(symbol="A", quantity=quantity)
     assert portfolio.cash == 0
     cost_basis = 101.0 / quantity
-    portfolio.update_history_for_period(current_period)
+    portfolio.update_history()
 
-    current_period = portfolio.history.index[1]
-    portfolio.collect_income_per_period(current_period)
-    portfolio.sell_asset(period=current_period, symbol="A", quantity=quantity)
-    portfolio.update_history_for_period(current_period)
+    portfolio.advance_period()
+    portfolio.collect_income()
+    portfolio.sell_asset(symbol="A", quantity=quantity)
+    portfolio.update_history()
 
     expected_transaction_amount = (12 * (1 - 0.01)) * quantity
     expected_short_term_gains = (12 * (1 - 0.01) - cost_basis) * quantity
     expected_tax = expected_short_term_gains * 0.5
 
+    current_period = portfolio.current_period
     assert portfolio.cash == approx(expected_transaction_amount - expected_tax)
     assert portfolio.tax_owed == 0
     assert portfolio.history.loc[current_period]["taxes_paid_in_period"] == approx(
@@ -873,20 +864,18 @@ def test_sell_asset_negative_capital_gains_with_withholding(
     # We want to test withholding
     portfolio.tax_config.withhold_tax = True
 
-    current_period = portfolio.history.index[0]
-
-    portfolio.collect_income_per_period(portfolio.history.index[0])
+    portfolio.collect_income()
     quantity = 10.0
-    portfolio.move_cash(current_period, 202.0)
-    portfolio.buy_asset(period=current_period, symbol="B", quantity=quantity)
+    portfolio.move_cash(202.0)
+    portfolio.buy_asset(symbol="B", quantity=quantity)
     assert portfolio.cash == 0
     cost_basis = 202.0 / quantity
-    portfolio.update_history_for_period(current_period)
+    portfolio.update_history()
 
-    current_period = portfolio.history.index[1]
-    portfolio.collect_income_per_period(current_period)
-    portfolio.sell_asset(period=current_period, symbol="B", quantity=quantity)
-    portfolio.update_history_for_period(current_period)
+    portfolio.advance_period()
+    portfolio.collect_income()
+    portfolio.sell_asset(symbol="B", quantity=quantity)
+    portfolio.update_history()
 
     expected_proceeds = (15 * (1 - 0.01)) * quantity
     expected_short_term_gains = (15 * (1 - 0.01) - cost_basis) * quantity
@@ -896,7 +885,7 @@ def test_sell_asset_negative_capital_gains_with_withholding(
     # we expect negative tax owed but no "tax" flowing into cash
     assert portfolio.cash == approx(expected_proceeds)
     assert portfolio.tax_owed == approx(expected_tax)
-    assert portfolio.history.loc[current_period]["taxes_paid_in_period"] == 0
+    assert portfolio.history.loc[portfolio.current_period]["taxes_paid_in_period"] == 0
 
 
 def test_sell_asset_negative_capital_gains_no_withholding(
@@ -904,22 +893,20 @@ def test_sell_asset_negative_capital_gains_no_withholding(
 ):
     portfolio = portfolio_for_sell_asset_testing_1pct_fee_50pct_short_25pct_long
     # We want to test withholding
-    assert portfolio.tax_config.withhold_tax == False
+    assert portfolio.tax_config.withhold_tax is False
 
-    current_period = portfolio.history.index[0]
-
-    portfolio.collect_income_per_period(portfolio.history.index[0])
+    portfolio.collect_income()
     quantity = 10.0
-    portfolio.move_cash(current_period, 202.0)
-    portfolio.buy_asset(period=current_period, symbol="B", quantity=quantity)
+    portfolio.move_cash(202.0)
+    portfolio.buy_asset(symbol="B", quantity=quantity)
     assert portfolio.cash == 0
     cost_basis = 202.0 / quantity
-    portfolio.update_history_for_period(current_period)
+    portfolio.update_history()
 
-    current_period = portfolio.history.index[1]
-    portfolio.collect_income_per_period(current_period)
-    portfolio.sell_asset(period=current_period, symbol="B", quantity=quantity)
-    portfolio.update_history_for_period(current_period)
+    portfolio.advance_period()
+    portfolio.collect_income()
+    portfolio.sell_asset(symbol="B", quantity=quantity)
+    portfolio.update_history()
 
     expected_proceeds = (15 * (1 - 0.01)) * quantity
     expected_short_term_gains = (15 * (1 - 0.01) - cost_basis) * quantity
@@ -929,7 +916,7 @@ def test_sell_asset_negative_capital_gains_no_withholding(
     # we expect negative tax owed but no "tax" flowing into cash
     assert portfolio.cash == approx(expected_proceeds)
     assert portfolio.tax_owed == approx(expected_tax)
-    assert portfolio.history.loc[current_period]["taxes_paid_in_period"] == 0
+    assert portfolio.history.loc[portfolio.current_period]["taxes_paid_in_period"] == 0
 
 
 def test_sell_asset_tax_lot_handling_FIFO(portfolio_with_assets):
@@ -938,31 +925,29 @@ def test_sell_asset_tax_lot_handling_FIFO(portfolio_with_assets):
     portfolio.tax_config.tax_strategy = "FIFO"
 
     # First buy of quantity 10
-    period = portfolio.history.index[0]
-    portfolio.collect_income_per_period(period)
-    portfolio.buy_asset(period, "TEST", 10.0)
+    portfolio.collect_income()
+    portfolio.buy_asset("TEST", 10.0)
     index_buy_1 = portfolio.transactions.index.max()
-    portfolio.update_history_for_period(period)
+    portfolio.update_history()
 
+    portfolio.advance_period()
     # Second buy of quantity 10
-    period = portfolio.history.index[1]
-    portfolio.collect_income_per_period(period)
-    portfolio.buy_asset(period, "TEST", 10.0)
+    portfolio.collect_income()
+    portfolio.buy_asset("TEST", 10.0)
     index_buy_2 = portfolio.transactions.index.max()
-    portfolio.update_history_for_period(period)
+    portfolio.update_history()
 
-    period = portfolio.history.index[2]
-    portfolio.collect_income_per_period(period)
-
-    portfolio.sell_asset(period, "TEST", 5.0)
+    portfolio.advance_period()
+    portfolio.collect_income()
+    portfolio.sell_asset("TEST", 5.0)
     assert portfolio.transactions.loc[index_buy_1]["lot_quantity_remaining"] == 5.0
     assert portfolio.transactions.loc[index_buy_2]["lot_quantity_remaining"] == 10.0
 
-    portfolio.sell_asset(period, "TEST", 10.0)
+    portfolio.sell_asset("TEST", 10.0)
     assert portfolio.transactions.loc[index_buy_1]["lot_quantity_remaining"] == 0.0
     assert portfolio.transactions.loc[index_buy_2]["lot_quantity_remaining"] == 5.0
 
-    portfolio.sell_asset(period, "TEST", 5.0)
+    portfolio.sell_asset("TEST", 5.0)
     assert portfolio.transactions.loc[index_buy_2]["lot_quantity_remaining"] == 0.0
     assert portfolio.transactions.loc[index_buy_2]["lot_quantity_remaining"] == 0.0
 
@@ -971,33 +956,32 @@ def test_sell_asset_tax_lot_handling_LIFO(portfolio_with_assets):
     portfolio = portfolio_with_assets
     portfolio.tax_config.tax_strategy = "LIFO"
 
-    period = portfolio.history.index[0]
-    portfolio.collect_income_per_period(period)
+    portfolio.collect_income()
     # TODO 2 buy qty 10 transactions in the first two periods
-    portfolio.buy_asset(period, "TEST", 10.0)
+    portfolio.buy_asset("TEST", 10.0)
     index_buy_1 = portfolio.transactions.index.max()
-    portfolio.update_history_for_period(period)
+    portfolio.update_history()
 
-    period = portfolio.history.index[1]
-    portfolio.collect_income_per_period(period)
-    portfolio.buy_asset(period, "TEST", 10.0)
+    portfolio.advance_period()
+    portfolio.collect_income()
+    portfolio.buy_asset("TEST", 10.0)
     index_buy_2 = portfolio.transactions.index.max()
-    portfolio.update_history_for_period(period)
+    portfolio.update_history()
 
-    period = portfolio.history.index[2]
-    portfolio.collect_income_per_period(period)
+    portfolio.advance_period()
+    portfolio.collect_income()
 
-    portfolio.sell_asset(period, "TEST", 5.0)
+    portfolio.sell_asset("TEST", 5.0)
 
     assert portfolio.transactions.loc[index_buy_1]["lot_quantity_remaining"] == 10.0
     assert portfolio.transactions.loc[index_buy_2]["lot_quantity_remaining"] == 5.0
 
-    portfolio.sell_asset(period, "TEST", 10.0)
+    portfolio.sell_asset("TEST", 10.0)
 
     assert portfolio.transactions.loc[index_buy_1]["lot_quantity_remaining"] == 5.0
     assert portfolio.transactions.loc[index_buy_2]["lot_quantity_remaining"] == 0.0
 
-    portfolio.sell_asset(period, "TEST", 5.0)
+    portfolio.sell_asset("TEST", 5.0)
     assert portfolio.transactions.loc[index_buy_2]["lot_quantity_remaining"] == 0.0
     assert portfolio.transactions.loc[index_buy_2]["lot_quantity_remaining"] == 0.0
 
@@ -1006,31 +990,29 @@ def test_sell_asset_tax_strategy_error(portfolio_with_assets):
     portfolio = portfolio_with_assets
     portfolio.tax_config.tax_strategy = "UNKNOWN"
 
-    period = portfolio.history.index[0]
-    portfolio.collect_income_per_period(period)
+    portfolio.collect_income()
 
     with raises(ValueError, match="Invalid tax strategy"):
-        portfolio.sell_asset(period, "TEST", 10.0)
+        portfolio.sell_asset("TEST", 10.0)
 
 
 def test_sell_asset_quantity_errors(portfolio_with_assets):
     portfolio = portfolio_with_assets
 
-    period = portfolio.history.index[0]
-    portfolio.collect_income_per_period(period)
-    portfolio.buy_asset(period, "TEST", 10.0)
+    portfolio.collect_income()
+    portfolio.buy_asset("TEST", 10.0)
 
     # Sell nothing
     with raises(ValueError, match="Quantity must be greater than 0"):
-        portfolio.sell_asset(period, "TEST", 0.0)
+        portfolio.sell_asset("TEST", 0.0)
 
     # Sell quantity less than 0
     with raises(ValueError, match="Quantity must be greater than 0"):
-        portfolio.sell_asset(period, "TEST", -1.0)
+        portfolio.sell_asset("TEST", -1.0)
 
     # Sell more than we own
     with raises(ValueError, match="is greater than current holdings"):
-        portfolio.sell_asset(period, "TEST", 20.0)
+        portfolio.sell_asset("TEST", 20.0)
 
     # TODO this also works for non-existent assests.
     # But the exceptions should be more explicit
@@ -1039,42 +1021,39 @@ def test_sell_asset_quantity_errors(portfolio_with_assets):
 def test_sell_asset_states(portfolio_with_assets):
     portfolio = portfolio_with_assets
 
-    period = portfolio.history.index[0]
-
     # This also ensures that the state check is the first exception
     # that the method raises
     with raises(
         RuntimeError, match="wrong state: COLLECT_INCOME. Expected state: TRANSACT"
     ):
-        portfolio.sell_asset(period, "TEST", 10.0)
+        portfolio.sell_asset("TEST", 10.0)
 
-    portfolio.collect_income_per_period(period)
-    portfolio.buy_asset(period, "TEST", 10.0)
-    portfolio.sell_asset(period, "TEST", 10.0)
-    assert portfolio._states[period] == PortfolioState.TRANSACT
+    portfolio.collect_income()
+    portfolio.buy_asset("TEST", 10.0)
+    portfolio.sell_asset("TEST", 10.0)
+    assert portfolio._states[portfolio.current_period] == PortfolioState.TRANSACT
 
 
 def test_pay_tax(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
-    portfolio.collect_income_per_period(current_period)
+    portfolio.collect_income()
 
     # pay all the tax
     portfolio.tax_owed = 100
-    portfolio.pay_tax(current_period)
+    portfolio.pay_tax()
     assert portfolio.tax_owed == 0
     assert portfolio.cash == -100
 
     # pay spefic amount of tax
     portfolio.tax_owed = 100
-    portfolio.pay_tax(current_period, 50)
+    portfolio.pay_tax(50)
     assert portfolio.tax_owed == 50
     assert portfolio.cash == -150
     portfolio.tax_owed = 100
 
     # paying 0 shouldn't change anything
-    portfolio.pay_tax(current_period, 0)
+    portfolio.pay_tax(0)
     assert portfolio.tax_owed == 100
 
     assert len(portfolio.transactions) == 2
@@ -1082,17 +1061,16 @@ def test_pay_tax(portfolio_with_assets_taxes_fees):
 
 def test_pay_tax_transaction(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
-    portfolio.collect_income_per_period(current_period)
+    portfolio.collect_income()
     portfolio.tax_owed = 100
-    portfolio.pay_tax(current_period)
+    portfolio.pay_tax()
 
     assert len(portfolio.transactions) == 1
 
     assert_transaction(
         transaction=portfolio.transactions.iloc[0],
-        period=current_period,
+        period=portfolio.current_period,
         type="pay_tax",
         transaction_amount=-100,
     )
@@ -1100,24 +1078,23 @@ def test_pay_tax_transaction(portfolio_with_assets_taxes_fees):
 
 def test_pay_tax_errors(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
 
-    portfolio.collect_income_per_period(current_period)
+    portfolio.collect_income()
     with raises(ValueError, match="Amount is greater than tax owed"):
-        portfolio.pay_tax(current_period, 1.0)
+        portfolio.pay_tax(1.0)
 
     with raises(ValueError, match="Amount is negative. That's not how tax works."):
-        portfolio.pay_tax(current_period, -1.0)
+        portfolio.pay_tax(-1.0)
 
 
 def test_pay_tax_states(portfolio_with_assets_taxes_fees):
     portfolio = portfolio_with_assets_taxes_fees
-    current_period = portfolio.history.index[0]
+    current_period = portfolio.current_period
 
-    portfolio.collect_income_per_period(current_period)
-    portfolio.pay_tax(current_period)
+    portfolio.collect_income()
+    portfolio.pay_tax()
     assert portfolio._states[current_period] == PortfolioState.TRANSACT
-    portfolio.update_history_for_period(current_period)
+    portfolio.update_history()
 
     with raises(RuntimeError, match="wrong state: DONE. Expected state: TRANSACT"):
-        portfolio.pay_tax(current_period)
+        portfolio.pay_tax()

@@ -1,7 +1,14 @@
 import pandas as pd
 from pytest import approx, raises
 
-from hhfk.core import AssetUniverse, FeeConfig, Portfolio, PortfolioState, TaxConfig
+from hhfk.core import (
+    Asset,
+    AssetUniverse,
+    FeeConfig,
+    Portfolio,
+    PortfolioState,
+    TaxConfig,
+)
 
 
 def assert_transaction(
@@ -135,6 +142,33 @@ def test_portfolio_state_incomplete_periods_errors(portfolio_with_assets_taxes_f
 
     # attempt to start in the wrong period
     with raises(RuntimeError, match="Last period was not in the DONE state"):
+        portfolio.advance_period()
+
+
+def test_advance_period():
+    universe = AssetUniverse(data_frequency="D")
+    periods = pd.period_range("2025-01-01", periods=2, freq="D")
+    Asset(
+        symbol="TEST",
+        assetUniverse=universe,
+        data=pd.DataFrame(
+            {
+                "price": [1.0, 2.0],
+                "income": [1.0, 2.0],
+            },
+            index=periods,
+        ),
+    )
+    portfolio = Portfolio(asset_universe=universe)
+
+    portfolio.collect_income()
+    portfolio.update_history()
+    portfolio.advance_period()
+    assert portfolio.current_period == portfolio.history.index[1]
+
+    portfolio.collect_income()
+    portfolio.update_history()
+    with raises(StopIteration, match="End of history reached"):
         portfolio.advance_period()
 
 

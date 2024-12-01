@@ -168,7 +168,7 @@ class AssetUniverse:
         # Check if we're trying to add an asset with the same symbol
         if asset.symbol in self.assets:
             raise ValueError(f"Asset with symbol {asset.symbol} already exists")
-        # check if the asset is empty
+        # check if the asset is empty. Never happens, but we keep it just in case
         if asset.data.empty:
             raise ValueError(f"Asset with symbol {asset.symbol} is empty")
 
@@ -319,14 +319,6 @@ class Portfolio:
         )  # type: ignore
 
     def _check_state(self, expected_state: PortfolioState) -> None:
-        if self.current_period > self._states.index.min():
-            # TODO add handling for skipped periods
-            # TODO We guarantee monotonicity but not single period steps
-            # check that the last period was not in the DONE state
-            if self._states[self.current_period - 1] != PortfolioState.DONE:
-                raise RuntimeError(
-                    f"Last period was not in the {PortfolioState.DONE.value} state"
-                )
         current_state = self._states[self.current_period]
         if current_state != expected_state:
             raise RuntimeError(

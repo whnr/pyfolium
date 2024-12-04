@@ -1,7 +1,7 @@
 import pandas as pd
 from pytest import approx, raises
 
-from hhfk.core import (
+from pyfolium.core import (
     Asset,
     AssetUniverse,
     FeeConfig,

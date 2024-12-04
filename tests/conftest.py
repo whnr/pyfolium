@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from hhfk.core import Asset, AssetUniverse, FeeConfig, Portfolio, TaxConfig
+from pyfolium.core import Asset, AssetUniverse, FeeConfig, Portfolio, TaxConfig
 
 # Make debugging easier
 pd.options.display.max_columns = None  # type: ignore

@@ -3,8 +3,8 @@ from typing import List, Tuple
 import pandas as pd
 import pytest
 
-from hhfk.core import Asset, AssetUniverse, Portfolio
-from hhfk.strategy import BaseStrategy
+from pyfolium.core import Asset, AssetUniverse, Portfolio
+from pyfolium.strategy import BaseStrategy
 
 
 class SimpleStrategy(BaseStrategy):

@@ -1,0 +1,132 @@
+[project]
+name = "pyfolium"
+version = "0.1.0"
+description = "A Python backtesting library for portfolio management and trading strategies"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.0.0",
+    "pandas-stubs>=2.0.0",
+    "mypy>=1.0.0",
+    "deepdiff>=6.0.0",
+    "sphinx>=7.0.0",
+    "ruff>=0.8.0",
+    "pre-commit>=3.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.0.0",
+    "pandas-stubs>=2.0.0",
+    "mypy>=1.0.0",
+    "deepdiff>=6.0.0",
+    "sphinx>=7.0.0",
+    "ruff>=0.8.0",
+    "pre-commit>=3.0.0",
+]
+
+# Pytest configuration
+[tool.pytest.ini_options]
+pythonpath = "."
+addopts = [
+    "--cov=pyfolium.core",
+    "--cov=pyfolium.strategy",
+    "--cov-branch",
+    "--cov-report=xml:coverage/coverage.xml",
+    "--cov-report=html:coverage/",
+]
+testpaths = ["tests"]
+
+# Ruff configuration - replaces black, isort, and flake8
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "SIM",   # flake8-simplify
+    "PTH",   # flake8-use-pathlib
+]
+ignore = [
+    "E203",  # whitespace before ':', incompatible with black
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "N802",  # Allow function names like test_FIFO in tests
+    "N806",  # Allow variable names like taxConfig in tests
+]
+"pyfolium/core.py" = [
+    "N803",  # Allow assetUniverse parameter name (pre-existing convention)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pyfolium"]
+force-single-line = false
+lines-after-imports = 2
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+# Mypy configuration
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = "pandas.*"
+ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+module = "deepdiff.*"
+ignore_missing_imports = true
+
+# Coverage configuration
+[tool.coverage.run]
+branch = true
+source = ["pyfolium"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]

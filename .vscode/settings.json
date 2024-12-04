@@ -1,15 +1,14 @@
 {
   "[python]": {
-    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit",
       "source.organizeImports": "explicit"
-    },
+    }
   },
-  "isort.args": [
-    "--profile",
-    "black"
-  ],
+  "ruff.lint.enable": true,
+  "ruff.format.args": [],
   "python.testing.pytestArgs": [
     "."
   ],

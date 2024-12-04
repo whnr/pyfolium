@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash($HOME/.local/bin/uv run ruff check .)",
+      "Bash($HOME/.local/bin/uv run pytest -q)",
+      "Bash($HOME/.local/bin/uv run:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,7 +1,7 @@
 import pandas as pd
 from pytest import raises
 
-from hhfk.core import Asset
+from pyfolium.core import Asset
 
 
 def test_asset_universe_empty(sample_asset_universe, sample_asset_data):

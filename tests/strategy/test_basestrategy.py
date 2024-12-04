@@ -1,14 +1,12 @@
-from typing import List, Tuple
-
 import pandas as pd
 import pytest
 
-from hhfk.core import Asset, AssetUniverse, Portfolio
-from hhfk.strategy import BaseStrategy
+from pyfolium.core import Asset, AssetUniverse, Portfolio
+from pyfolium.strategy import BaseStrategy
 
 
 class SimpleStrategy(BaseStrategy):
-    def get_trades(self) -> List[Tuple[str, float]]:
+    def get_trades(self) -> list[tuple[str, float]]:
         return [("AAPL", 100)]
 
 
@@ -55,7 +53,7 @@ def test_record_trade(strategy):
     assert trade["quantity"] == 100
     assert trade["executed_quantity"] == 100
     assert trade["category"] == "test"
-    assert trade["success"] == True
+    assert trade["success"]
     assert trade["period"] == strategy.portfolio.current_period
 
 

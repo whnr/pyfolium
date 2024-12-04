@@ -1,5 +1,4 @@
 def test_fee_config(fee_config):
-
     # test the general fee config exists
     assert fee_config.minimum_fee == 5.0
     assert fee_config.fixed_fee == 1.0

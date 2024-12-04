@@ -3,7 +3,7 @@ from datetime import timedelta
 import pandas as pd
 from pytest import raises
 
-from hhfk.core import Asset, AssetUniverse
+from pyfolium.core import Asset, AssetUniverse
 
 
 def test_asset_fixture(sample_asset):

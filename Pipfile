@@ -15,6 +15,7 @@ pandas-stubs = "*"
 mypy = "*"
 deepdiff = "*"
 sphinx = "*"
+pytest-mock = "*"
 
 [requires]
 python_version = "3.12"

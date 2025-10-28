@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List
 
 import pandas as pd
 
@@ -64,7 +63,7 @@ class Asset:
         data: pd.DataFrame,
         price_column: str = "price",
         income_column: str | None = None,
-        metadata: Dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ):
         self.symbol = symbol
         self.assetUniverse = assetUniverse
@@ -86,7 +85,8 @@ class Asset:
 
         if not self.data.index.is_monotonic_increasing or not self.data.index.is_unique:
             raise ValueError(
-                f"Period index of asset with symbol {self.symbol} is not strictly monotonic"
+                f"Period index of asset with symbol {self.symbol} "
+                "is not strictly monotonic"
             )
 
         if income_column:
@@ -147,7 +147,7 @@ class AssetUniverse:
                 Must be one of the pandas period aliases like 'D' or 'M'.
         """
         self.data_frequency = data_frequency
-        self.assets: Dict[str, Asset] = {}
+        self.assets: dict[str, Asset] = {}
         self.price_matrix: pd.DataFrame = pd.DataFrame()
         self.income_matrix: pd.DataFrame = pd.DataFrame()
         self.empty = True
@@ -179,7 +179,7 @@ class AssetUniverse:
         self.empty = False
 
     @property
-    def asset_symbols_list(self) -> List[str]:
+    def asset_symbols_list(self) -> list[str]:
         """
         Get the list of asset symbols in the asset universe.
 
@@ -314,9 +314,7 @@ class Portfolio:
         )
 
         # initialize the portfolio state tracker
-        self._states = pd.Series(
-            index=period_index, data=PortfolioState.COLLECT_INCOME
-        )  # type: ignore
+        self._states = pd.Series(index=period_index, data=PortfolioState.COLLECT_INCOME)  # type: ignore
 
     def _check_state(self, expected_state: PortfolioState) -> None:
         current_state = self._states[self.current_period]
@@ -372,9 +370,8 @@ class Portfolio:
         transaction["period"] = self.current_period
         required_columns = {"period", "type", "transaction_amount"}
         if not required_columns.issubset(transaction.keys()):
-            raise KeyError(
-                f"Missing required columns: {required_columns - set(transaction.keys())}"
-            )
+            missing = required_columns - set(transaction.keys())
+            raise KeyError(f"Missing required columns: {missing}")
 
         # Check if the transaction type is valid
         if transaction["type"] not in self.transaction_types:
@@ -667,9 +664,9 @@ class Portfolio:
                 quantity_to_sell -= lot_quantity_sold
                 self.transactions.loc[lot, "lot_quantity_remaining"] = 0
             else:
-                self.transactions.loc[
-                    lot, "lot_quantity_remaining"
-                ] -= lot_quantity_sold
+                self.transactions.loc[lot, "lot_quantity_remaining"] -= (
+                    lot_quantity_sold
+                )
                 quantity_to_sell = 0
                 break
 

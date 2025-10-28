@@ -4,3 +4,17 @@ __pycache__
 
 .coverage
 coverage/
+
+# uv
+.venv
+.python-version
+
+# Ruff cache
+.ruff_cache/
+
+# Mypy cache
+.mypy_cache/
+
+# IDEs
+.vscode/
+.idea/

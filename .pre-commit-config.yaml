@@ -1,0 +1,40 @@
+# Pre-commit hooks for code quality checks
+# Install: uv run pre-commit install
+# Run manually: uv run pre-commit run --all-files
+
+repos:
+  # Ruff - Fast Python linter and formatter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.2
+    hooks:
+      # Run the linter
+      - id: ruff
+        args: [--fix]
+      # Run the formatter
+      - id: ruff-format
+
+  # Mypy - Static type checker (optional, can be slow)
+  # Uncomment to enable type checking in pre-commit
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.18.2
+  #   hooks:
+  #     - id: mypy
+  #       additional_dependencies:
+  #         - pandas-stubs
+  #         - types-pytz
+  #       args: [--config-file=pyproject.toml]
+  #       files: ^pyfolium/
+
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]

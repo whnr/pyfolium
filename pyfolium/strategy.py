@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -16,7 +15,7 @@ class BaseStrategy(ABC):
         trades_df: DataFrame tracking all attempted trades
     """
 
-    def __init__(self, portfolio: Portfolio, parameters: Optional[Dict] = None):
+    def __init__(self, portfolio: Portfolio, parameters: dict | None = None):
         self.portfolio = portfolio
         self.asset_universe = portfolio.asset_universe
         self.parameters = parameters or {}
@@ -35,7 +34,7 @@ class BaseStrategy(ABC):
         )
 
     @abstractmethod
-    def get_trades(self) -> List[Tuple[str, float]]:
+    def get_trades(self) -> list[tuple[str, float]]:
         """Generate list of desired trades for the current period
 
         Returns:
@@ -62,7 +61,7 @@ class BaseStrategy(ABC):
             "success": success,
         }
 
-    def execute_trades(self, trades: List[Tuple[str, float]]) -> None:
+    def execute_trades(self, trades: list[tuple[str, float]]) -> None:
         """Execute a list of trades in the portfolio"""
         for symbol, quantity in trades:
             try:

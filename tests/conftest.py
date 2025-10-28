@@ -4,6 +4,7 @@ import pytest
 
 from pyfolium.core import Asset, AssetUniverse, FeeConfig, Portfolio, TaxConfig
 
+
 # Make debugging easier
 pd.options.display.max_columns = None  # type: ignore
 pd.options.display.width = None  # type: ignore

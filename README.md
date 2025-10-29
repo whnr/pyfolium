@@ -1,6 +1,8 @@
 # Pyfolium
 
-> **Hätte hätte Fahrradkette** (German: "if only, if only") — A Python backtesting library for portfolio management and trading strategies.
+## Historical Hindsight Forecasting Kit
+
+> **Hätte hätte Fahrradkette** — A German saying meaning "if only, if only" or "shoulda coulda woulda," used when looking back at missed opportunities. The perfect name for a backtesting library, though we opted for "Pyfolium" instead (because Python package names with umlauts are... challenging).
 
 Pyfolium provides a robust framework for simulating historical portfolio performance with support for taxes, capital gains tracking, transaction fees, dividend income, and custom trading strategies.
 
@@ -229,4 +231,4 @@ uv run pytest
 
 ## Acknowledgments
 
-Named after the German saying "Hätte hätte Fahrradkette" — used when looking back at missed opportunities, perfectly fitting for a backtesting library that lets you explore what could have been.
+Built with modern Python tooling: uv, ruff, pytest, pydantic, and pandas. Inspired by the desire to answer the eternal question: "What if I had invested in that instead?"

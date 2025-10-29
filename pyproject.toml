@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pandas>=2.0.0",
+    "pyarrow>=18.0.0,<19.0.0",
+    "pydantic>=2.0.0",
+    "yfinance>=0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -44,11 +47,15 @@ pythonpath = "."
 addopts = [
     "--cov=pyfolium.core",
     "--cov=pyfolium.strategy",
+    "--cov=pyfolium.data",
     "--cov-branch",
     "--cov-report=xml:coverage/coverage.xml",
     "--cov-report=html:coverage/",
 ]
 testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
 
 # Ruff configuration - replaces black, isort, and flake8
 [tool.ruff]

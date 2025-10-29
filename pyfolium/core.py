@@ -1,37 +1,79 @@
-from dataclasses import dataclass
 from enum import Enum
 
 import pandas as pd
+from pydantic import BaseModel, Field, field_validator
 
 
-@dataclass
-class TaxConfig:
-    """Configuration for tax calculations"""
+class TaxConfig(BaseModel):
+    """Configuration for tax calculations with validation.
 
-    # TODO this needs to be refactored into a real class
-    # it should track the whole tax system and update a tax dataframe
-    # in the portfolio class.
-    # For now, it's just a simple config with some caveats:
-    # - When you withold tax, but sell at a loss, you will not get tax back
+    This config uses Pydantic for automatic validation of tax rates and strategies.
 
-    short_term_rate: float = 0.0
-    long_term_holding_period: pd.DateOffset = pd.DateOffset(years=1)
-    long_term_rate: float = 0.0
+    Attributes:
+        short_term_rate: Tax rate for short-term capital gains (0.0 to 1.0)
+        long_term_holding_period: Period to qualify for long-term gains
+        long_term_rate: Tax rate for long-term capital gains (0.0 to 1.0)
+        withhold_tax: Whether to withhold tax immediately on gains
+        tax_strategy: Tax lot selection strategy ("FIFO" or "LIFO")
+
+    Note:
+        Current limitation: When you withhold tax but sell at a loss,
+        you will not get tax back.
+    """
+
+    short_term_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    long_term_holding_period: pd.DateOffset = Field(default_factory=lambda: pd.DateOffset(years=1))
+    long_term_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     withhold_tax: bool = False
-    tax_strategy: str = "FIFO"
+    tax_strategy: str = Field(default="FIFO", pattern="^(FIFO|LIFO)$")
+
+    @field_validator("tax_strategy")
+    @classmethod
+    def validate_tax_strategy(cls, v: str) -> str:
+        """Validate that tax strategy is either FIFO or LIFO."""
+        if v not in ["FIFO", "LIFO"]:
+            raise ValueError(f"tax_strategy must be 'FIFO' or 'LIFO', got '{v}'")
+        return v
+
+    model_config = {"arbitrary_types_allowed": True}  # Allow pd.DateOffset
 
 
-@dataclass
-class FeeConfig:
-    """Configuration for transaction fees"""
+class FeeConfig(BaseModel):
+    """Configuration for transaction fees with validation.
 
-    fixed_fee: float = 0.0  # Fixed fee per trade
-    percentage_fee: float = 0.0  # Percentage of trade value
-    minimum_fee: float = 0.0  # Minimum fee per trade
-    maximum_fee: float = float("inf")  # Maximum fee per trade
+    This config uses Pydantic for automatic validation of fee parameters.
+
+    Attributes:
+        fixed_fee: Fixed fee per trade (non-negative)
+        percentage_fee: Percentage of trade value as fee (0.0 to 1.0)
+        minimum_fee: Minimum fee per trade (non-negative)
+        maximum_fee: Maximum fee per trade (non-negative)
+    """
+
+    fixed_fee: float = Field(default=0.0, ge=0.0)
+    percentage_fee: float = Field(default=0.0, ge=0.0, le=1.0)
+    minimum_fee: float = Field(default=0.0, ge=0.0)
+    maximum_fee: float = Field(default=float("inf"), gt=0.0)
+
+    @field_validator("maximum_fee")
+    @classmethod
+    def validate_max_fee(cls, v: float, info) -> float:
+        """Validate that maximum_fee >= minimum_fee."""
+        if "minimum_fee" in info.data and v < info.data["minimum_fee"]:
+            raise ValueError(
+                f"maximum_fee ({v}) must be >= minimum_fee ({info.data['minimum_fee']})"
+            )
+        return v
 
     def calculate_fee(self, transaction_value: float) -> float:
-        """Calculate the fee for a given transaction value"""
+        """Calculate the fee for a given transaction value.
+
+        Args:
+            transaction_value: Absolute value of the transaction
+
+        Returns:
+            Fee amount bounded by minimum_fee and maximum_fee
+        """
         percentage_based = transaction_value * self.percentage_fee
         total_fee = self.fixed_fee + percentage_based
         return max(min(total_fee, self.maximum_fee), self.minimum_fee)
@@ -153,18 +195,31 @@ class AssetUniverse:
         self.empty = True
 
     def _update_price_matrix(self) -> None:
+        """Rebuild entire price matrix. Only used for legacy compatibility."""
         self.price_matrix = pd.DataFrame(
             {asset.symbol: asset.price for asset in self.assets.values()},
             index=self.get_period_index_range(),
         )
 
     def _update_income_matrix(self) -> None:
+        """Rebuild entire income matrix. Only used for legacy compatibility."""
         self.income_matrix = pd.DataFrame(
             {asset.symbol: asset.income for asset in self.assets.values()},
             index=self.get_period_index_range(),
         )
 
     def add_asset(self, asset: Asset):
+        """Add an asset to the universe with incremental matrix updates.
+
+        This method uses incremental column addition instead of full matrix
+        rebuilds for O(n) vs O(n²) performance when adding n assets.
+
+        Args:
+            asset: Asset to add to the universe
+
+        Raises:
+            ValueError: If asset symbol already exists or asset data is empty
+        """
         # Check if we're trying to add an asset with the same symbol
         if asset.symbol in self.assets:
             raise ValueError(f"Asset with symbol {asset.symbol} already exists")
@@ -173,8 +228,18 @@ class AssetUniverse:
             raise ValueError(f"Asset with symbol {asset.symbol} is empty")
 
         self.assets[asset.symbol] = asset
-        self._update_price_matrix()
-        self._update_income_matrix()
+
+        # Incremental update: just add columns instead of rebuilding entire matrix
+        new_period_range = self.get_period_index_range()
+
+        # Add new columns
+        self.price_matrix[asset.symbol] = asset.price
+        self.income_matrix[asset.symbol] = asset.income
+
+        # Reindex to handle expanded period range (fills with NaN for missing periods)
+        self.price_matrix = self.price_matrix.reindex(new_period_range)
+        self.income_matrix = self.income_matrix.reindex(new_period_range)
+
         # Finally flag that the universe is not empty anymore
         self.empty = False
 

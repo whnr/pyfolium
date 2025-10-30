@@ -139,9 +139,9 @@ def example_simple():
 
     # Display results
     print("\nBacktest completed successfully!")
-    print(
-        f"Simulated {result.total_periods} periods in {result.execution_time:.2f} seconds"
-    )
+    periods = result.total_periods
+    exec_time = result.execution_time
+    print(f"Simulated {periods} periods in {exec_time:.2f} seconds")
     print(f"Final cash: ${result.portfolio.cash:,.2f}")
     print(
         f"Final holdings: {result.portfolio.holdings.loc[result.end_period].to_dict()}"
@@ -204,9 +204,8 @@ def example_with_hooks():
             holdings = runner.portfolio.holdings.loc[runner.current_period]
             prices = runner.asset_universe.price_matrix.loc[runner.current_period]
             portfolio_value = runner.portfolio.cash + (holdings * prices).sum()
-            print(
-                f"Period {runner._periods_completed}: Portfolio value = ${portfolio_value:,.2f}"
-            )
+            period_num = runner._periods_completed
+            print(f"Period {period_num}: Portfolio value = ${portfolio_value:,.2f}")
 
     def log_backtest_end(runner):
         """Log summary at the end."""

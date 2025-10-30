@@ -194,7 +194,7 @@ def test_hooks_are_called(portfolio, strategy):
     runner.register_hook("backtest_start", backtest_start_hook)
     runner.register_hook("backtest_end", backtest_end_hook)
 
-    result = runner.run()
+    runner.run()
 
     # Should have called hooks for each period plus backtest start/end
     assert calls["start"] > 0

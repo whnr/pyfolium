@@ -169,3 +169,75 @@ def test_backtest_result_success_property(portfolio, strategy):
     # No errors means success
     assert result.success is True
     assert len(result.errors) == 0
+
+
+def test_hooks_are_called(portfolio, strategy):
+    """Test that hooks are actually called during execution."""
+    runner = BacktestRunner(portfolio, strategy)
+
+    calls = {"start": 0, "end": 0, "backtest_start": 0, "backtest_end": 0}
+
+    def start_hook(r):
+        calls["start"] += 1
+
+    def end_hook(r):
+        calls["end"] += 1
+
+    def backtest_start_hook(r):
+        calls["backtest_start"] += 1
+
+    def backtest_end_hook(r):
+        calls["backtest_end"] += 1
+
+    runner.register_hook("period_start", start_hook)
+    runner.register_hook("period_end", end_hook)
+    runner.register_hook("backtest_start", backtest_start_hook)
+    runner.register_hook("backtest_end", backtest_end_hook)
+
+    result = runner.run()
+
+    # Should have called hooks for each period plus backtest start/end
+    assert calls["start"] > 0
+    assert calls["end"] > 0
+    assert calls["backtest_start"] == 1
+    assert calls["backtest_end"] == 1
+    assert calls["start"] == calls["end"]  # Same number of start/end calls
+
+
+def test_progress_bar_with_tqdm(portfolio, strategy):
+    """Test running with progress bar enabled."""
+    runner = BacktestRunner(portfolio, strategy)
+    # Just test it doesn't crash - tqdm may or may not be available
+    result = runner.run(progress=True)
+    assert isinstance(result, BacktestResult)
+
+
+def test_error_during_strategy_execution(asset_universe):
+    """Test error handling when strategy raises exception."""
+
+    class FailingStrategy(BaseStrategy):
+        def __init__(self, portfolio):
+            super().__init__(portfolio)
+            self.call_count = 0
+
+        def get_trades(self):
+            self.call_count += 1
+            if self.call_count == 2:  # Fail on second call
+                raise ValueError("Intentional test error")
+            return []
+
+    portfolio = Portfolio(asset_universe)
+    portfolio.collect_income()
+    portfolio.update_history()
+    portfolio.advance_period()
+
+    strategy = FailingStrategy(portfolio)
+    runner = BacktestRunner(portfolio, strategy)
+
+    # Should complete despite error
+    with pytest.warns(UserWarning):
+        result = runner.run()
+
+    # Should have recorded the error
+    assert len(result.errors) > 0
+    assert not result.success

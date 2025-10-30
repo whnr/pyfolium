@@ -46,6 +46,7 @@ pythonpath = "."
 addopts = [
     "--cov=pyfolium.core",
     "--cov=pyfolium.strategy",
+    "--cov=pyfolium.simulation",
     "--cov=pyfolium.data",
     "--cov-branch",
     "--cov-report=xml:coverage/coverage.xml",

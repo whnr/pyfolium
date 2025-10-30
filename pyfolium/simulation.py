@@ -1,41 +1,7 @@
 """Backtest simulation orchestration.
 
-This module provides high-level APIs for running backtests with strategies and
-portfolios. It handles the complete simulation loop, error handling, progress
-reporting, and results collection.
-
-The main entry point is the BacktestRunner class, which automates the period-by-period
-execution of portfolio operations and strategy decisions.
-
-Future Phase 2 Features:
-    - ParameterSweep: Grid search over strategy parameters
-    - BatchRunner: Parallel execution of multiple backtests
-    - Optimization: Integration with scipy.optimize, optuna, etc.
-    - Result caching: Avoid re-running identical configurations
-
-Example:
-    Simple usage::
-
-        runner = BacktestRunner(portfolio, strategy)
-        result = runner.run()
-        print(f"Final cash: {result.portfolio.cash}")
-
-    Advanced with hooks::
-
-        def log_value(runner):
-            print(f"Period {runner.current_period}: ${runner.portfolio.cash:,.2f}")
-
-        runner = BacktestRunner(portfolio, strategy)
-        runner.register_hook('period_end', log_value)
-        result = runner.run(progress=True)
-
-    Step-by-step control::
-
-        runner = BacktestRunner(portfolio, strategy)
-        for _ in range(10):  # Run first 10 periods
-            runner.run_period()
-            if runner.portfolio.cash < 0:
-                break
+Provides BacktestRunner for automating backtest execution with hooks,
+progress reporting, and error handling.
 """
 
 import warnings

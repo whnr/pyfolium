@@ -6,7 +6,9 @@
       "Bash($HOME/.local/bin/uv run:*)",
       "Bash(git log:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh api:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,8 +1,5 @@
 """Tests for data loading utilities."""
 
-import tempfile
-from pathlib import Path
-
 import pandas as pd
 import pytest
 
@@ -158,7 +155,9 @@ def test_load_from_yahoo_real_data():
     This test is marked as slow since it makes a real API call.
     Run with: pytest -m slow
     """
-    result = load_from_yahoo("AAPL", start="2020-01-01", end="2020-01-31", frequency="D")
+    result = load_from_yahoo(
+        "AAPL", start="2020-01-01", end="2020-01-31", frequency="D"
+    )
 
     assert isinstance(result.index, pd.PeriodIndex)
     assert result.index.freqstr == "D"
@@ -168,10 +167,23 @@ def test_load_from_yahoo_real_data():
     assert result["price"].iloc[0] > 0
 
 
+@pytest.mark.slow
 def test_load_from_yahoo_no_income():
-    """Test loading Yahoo data without income column."""
-    # Skip this test if network is unavailable
-    pytest.skip("Skipping network-dependent test")
+    """Test loading Yahoo data without income column.
+
+    This test is marked as slow since it makes a real API call.
+    Run with: pytest -m slow
+    """
+    result = load_from_yahoo(
+        "AAPL", start="2020-01-01", end="2020-01-31", frequency="D", income_column=None
+    )
+
+    assert isinstance(result.index, pd.PeriodIndex)
+    assert result.index.freqstr == "D"
+    assert "price" in result.columns
+    assert "income" not in result.columns
+    assert len(result) > 0
+    assert result["price"].iloc[0] > 0
 
 
 def test_load_from_dataframe_handles_duplicates():
@@ -188,7 +200,9 @@ def test_load_from_dataframe_handles_duplicates():
     )
     df["date"] = pd.to_datetime(df["date"])
 
-    result = load_from_dataframe(df, frequency="D", date_column="date", income_column=None)
+    result = load_from_dataframe(
+        df, frequency="D", date_column="date", income_column=None
+    )
 
     # Should keep last value for duplicate period
     assert len(result) == 2  # Only unique periods

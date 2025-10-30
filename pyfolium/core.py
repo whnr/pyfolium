@@ -22,7 +22,9 @@ class TaxConfig(BaseModel):
     """
 
     short_term_rate: float = Field(default=0.0, ge=0.0, le=1.0)
-    long_term_holding_period: pd.DateOffset = Field(default_factory=lambda: pd.DateOffset(years=1))
+    long_term_holding_period: pd.DateOffset = Field(
+        default_factory=lambda: pd.DateOffset(years=1)
+    )
     long_term_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     withhold_tax: bool = False
     tax_strategy: str = Field(default="FIFO", pattern="^(FIFO|LIFO)$")
@@ -193,20 +195,6 @@ class AssetUniverse:
         self.price_matrix: pd.DataFrame = pd.DataFrame()
         self.income_matrix: pd.DataFrame = pd.DataFrame()
         self.empty = True
-
-    def _update_price_matrix(self) -> None:
-        """Rebuild entire price matrix. Only used for legacy compatibility."""
-        self.price_matrix = pd.DataFrame(
-            {asset.symbol: asset.price for asset in self.assets.values()},
-            index=self.get_period_index_range(),
-        )
-
-    def _update_income_matrix(self) -> None:
-        """Rebuild entire income matrix. Only used for legacy compatibility."""
-        self.income_matrix = pd.DataFrame(
-            {asset.symbol: asset.income for asset in self.assets.values()},
-            index=self.get_period_index_range(),
-        )
 
     def add_asset(self, asset: Asset):
         """Add an asset to the universe with incremental matrix updates.

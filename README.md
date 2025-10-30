@@ -20,8 +20,13 @@ A Python backtesting library for portfolio management with support for taxes, fe
 # Using uv (recommended)
 uv sync
 
+# Set up pre-commit hooks (runs ruff automatically on commit)
+uv run setup-dev
+
 # Or using pip
 pip install -e .
+pip install pre-commit
+pre-commit install
 ```
 
 ## Quick Start
@@ -171,21 +176,27 @@ universe = load_from_dataframe(df, frequency='D')
 ## Development
 
 ```bash
+# First-time setup
+uv sync
+uv run setup-dev  # Installs pre-commit hooks
+
 # Run tests
 uv run pytest
 
-# Run with coverage
-uv run pytest --cov=pyfolium
-
-# Format code
+# Format code (or let pre-commit do it automatically)
 uv run ruff format .
 
-# Lint
+# Lint (or let pre-commit do it automatically)
 uv run ruff check --fix .
 
 # Type check
 uv run mypy pyfolium/
+
+# Run all pre-commit checks manually
+uv run pre-commit run --all-files
 ```
+
+**Note:** After running `setup-dev`, ruff will automatically format and lint your code before each commit.
 
 ## Project Structure
 

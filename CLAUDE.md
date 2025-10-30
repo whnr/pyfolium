@@ -13,9 +13,12 @@ The project name is a German pun: "Hätte hätte Fahrradkette" (roughly translat
 ### Environment Setup
 - Package manager: `uv` (fast, modern Python package manager)
 - Install dependencies: `uv sync` (installs all dependencies including dev)
+- Set up pre-commit hooks: `uv run setup-dev` (run once after initial sync)
 - Run commands in venv: `uv run <command>` (auto-activates venv)
 - Activate environment manually: `source .venv/bin/activate`
 - Python version: 3.12+
+
+**Note:** After running `setup-dev`, pre-commit hooks will automatically run ruff on every commit.
 
 ### Testing
 - Run all tests: `uv run pytest`

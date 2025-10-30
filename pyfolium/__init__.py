@@ -1,4 +1,8 @@
-"""Pyfolium - A Python backtesting library for portfolio management."""
+"""Pyfolium: Portfolio backtesting library.
+
+A Python framework for simulating historical portfolio performance with support
+for taxes, fees, income (dividends), and custom trading strategies.
+"""
 
 from pyfolium.core import (
     Asset,
@@ -12,6 +16,7 @@ from pyfolium.data import (
     load_from_csv,
     load_from_dataframe,
 )
+from pyfolium.simulation import BacktestResult, BacktestRunner
 from pyfolium.strategy import BaseStrategy
 
 
@@ -24,6 +29,9 @@ __all__ = [
     # Configuration
     "TaxConfig",
     "FeeConfig",
+    # Simulation
+    "BacktestRunner",
+    "BacktestResult",
     # Strategy framework
     "BaseStrategy",
     # Data loaders

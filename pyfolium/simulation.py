@@ -281,13 +281,20 @@ class BacktestRunner:
 
             self._trigger_hooks("period_end")
 
+            self._periods_completed += 1
+
             # Advance to next period
+            # If we just completed the end_period, we're done
+            if self.current_period >= self.end_period:
+                raise StopIteration("Completed all periods")
+
             # End of portfolio history is expected - suppress StopIteration
             with suppress(StopIteration):
                 self.portfolio.advance_period()
 
-            self._periods_completed += 1
-
+        except StopIteration:
+            # Let StopIteration pass through - it's how we exit the loop
+            raise
         except Exception as e:
             # Store error and trigger error hooks
             self._errors.append((self.current_period, e))

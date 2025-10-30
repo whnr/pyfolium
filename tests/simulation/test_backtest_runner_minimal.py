@@ -26,7 +26,12 @@ def asset_universe():
 
 @pytest.fixture
 def portfolio(asset_universe):
-    return Portfolio(asset_universe=asset_universe)
+    portfolio = Portfolio(asset_universe=asset_universe)
+    # Initialize portfolio by completing first period
+    portfolio.collect_income()
+    portfolio.update_history()
+    portfolio.advance_period()
+    return portfolio
 
 
 @pytest.fixture
@@ -140,8 +145,8 @@ def test_invalid_period_range_raises_error(asset_universe):
             portfolio, strategy, start_period=periods[5], end_period=periods[2]
         )
 
-    # Period outside universe
-    invalid_period = pd.Period("2030-01-01", freq="D")
+    # Period outside universe (but before end_period to avoid start>end check)
+    invalid_period = pd.Period("2019-01-01", freq="D")  # Before universe range
     with pytest.raises(ValueError, match="not in asset universe"):
         BacktestRunner(portfolio, strategy, start_period=invalid_period)
 

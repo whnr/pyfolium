@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from pyfolium.data import load_from_csv, load_from_dataframe, load_from_yahoo
+from pyfolium.data import load_from_csv, load_from_dataframe
 
 
 def test_load_from_dataframe_with_date_column():
@@ -136,54 +136,6 @@ def test_load_from_csv_no_income_column(tmp_path):
 
     assert "income" in result.columns
     assert result["income"].iloc[0] == 0.0
-
-
-def test_load_from_yahoo_invalid_symbol():
-    """Test that invalid symbol raises error."""
-    # Use a clearly invalid symbol
-    # yfinance can raise either ValueError or TypeError depending on the error
-    with pytest.raises((ValueError, TypeError)):
-        load_from_yahoo(
-            "INVALID_SYMBOL_12345", start="2020-01-01", end="2020-01-31", frequency="D"
-        )
-
-
-@pytest.mark.slow
-def test_load_from_yahoo_real_data():
-    """Test loading real data from Yahoo Finance.
-
-    This test is marked as slow since it makes a real API call.
-    Run with: pytest -m slow
-    """
-    result = load_from_yahoo(
-        "AAPL", start="2020-01-01", end="2020-01-31", frequency="D"
-    )
-
-    assert isinstance(result.index, pd.PeriodIndex)
-    assert result.index.freqstr == "D"
-    assert "price" in result.columns
-    assert "income" in result.columns
-    assert len(result) > 0
-    assert result["price"].iloc[0] > 0
-
-
-@pytest.mark.slow
-def test_load_from_yahoo_no_income():
-    """Test loading Yahoo data without income column.
-
-    This test is marked as slow since it makes a real API call.
-    Run with: pytest -m slow
-    """
-    result = load_from_yahoo(
-        "AAPL", start="2020-01-01", end="2020-01-31", frequency="D", income_column=None
-    )
-
-    assert isinstance(result.index, pd.PeriodIndex)
-    assert result.index.freqstr == "D"
-    assert "price" in result.columns
-    assert "income" not in result.columns
-    assert len(result) > 0
-    assert result["price"].iloc[0] > 0
 
 
 def test_load_from_dataframe_handles_duplicates():

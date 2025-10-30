@@ -11,9 +11,9 @@ from pyfolium.core import (
 from pyfolium.data import (
     load_from_csv,
     load_from_dataframe,
-    load_from_yahoo,
 )
 from pyfolium.strategy import BaseStrategy
+
 
 __all__ = [
     # Core classes
@@ -27,7 +27,6 @@ __all__ = [
     # Strategy framework
     "BaseStrategy",
     # Data loaders
-    "load_from_yahoo",
     "load_from_csv",
     "load_from_dataframe",
 ]

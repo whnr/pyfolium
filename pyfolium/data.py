@@ -1,83 +1,12 @@
 """Data loading utilities for Pyfolium.
 
 This module provides functions to load asset data from various sources
-including Yahoo Finance, CSV files, and pandas DataFrames.
+including CSV files and pandas DataFrames.
 """
 
 from pathlib import Path
-from typing import Literal
 
 import pandas as pd
-import yfinance as yf
-
-
-def load_from_yahoo(
-    symbol: str,
-    start: str | pd.Timestamp,
-    end: str | pd.Timestamp,
-    frequency: Literal["D", "W", "M"] = "D",
-    price_column: str = "Adj Close",
-    income_column: str | None = "Dividends",
-) -> pd.DataFrame:
-    """Load asset data from Yahoo Finance.
-
-    Args:
-        symbol: Ticker symbol (e.g., "AAPL", "MSFT")
-        start: Start date (YYYY-MM-DD format or pd.Timestamp)
-        end: End date (YYYY-MM-DD format or pd.Timestamp)
-        frequency: Data frequency - "D" (daily), "W" (weekly), "M" (monthly)
-        price_column: Column to use for price data (default: "Adj Close")
-        income_column: Column to use for income/dividends (default: "Dividends")
-                       Set to None to exclude income data
-
-    Returns:
-        DataFrame with PeriodIndex and columns: "price" (and "income" if requested)
-
-    Example:
-        >>> df = load_from_yahoo("AAPL", "2020-01-01", "2023-12-31")
-        >>> df.head()
-                    price  income
-        2020-01     73.41    0.00
-        2020-02     68.34    0.21
-        ...
-    """
-    # Download data from Yahoo Finance
-    ticker = yf.Ticker(symbol)
-    interval_map = {"D": "1d", "W": "1wk", "M": "1mo"}
-    interval = interval_map.get(frequency, "1d")
-
-    data = ticker.history(start=start, end=end, interval=interval, actions=True)
-
-    if data.empty:
-        raise ValueError(f"No data found for symbol {symbol} between {start} and {end}")
-
-    # Convert to PeriodIndex
-    data.index = data.index.to_period(frequency)
-
-    # Select and rename columns
-    result_data = {}
-
-    if price_column not in data.columns:
-        raise ValueError(
-            f"Price column '{price_column}' not found. "
-            f"Available columns: {list(data.columns)}"
-        )
-    result_data["price"] = data[price_column]
-
-    if income_column is not None:
-        if income_column not in data.columns:
-            raise ValueError(
-                f"Income column '{income_column}' not found. "
-                f"Available columns: {list(data.columns)}"
-            )
-        result_data["income"] = data[income_column].fillna(0.0)
-
-    result = pd.DataFrame(result_data)
-
-    # Remove any duplicate periods (keep last)
-    result = result[~result.index.duplicated(keep="last")]
-
-    return result
 
 
 def load_from_csv(

@@ -425,6 +425,7 @@ dependencies = [
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pydantic" },
+    { name = "tqdm" },
 ]
 
 [package.optional-dependencies]
@@ -438,7 +439,6 @@ dev = [
     { name = "pytest-mock" },
     { name = "ruff" },
     { name = "sphinx" },
-    { name = "tqdm" },
 ]
 
 [package.dev-dependencies]
@@ -468,7 +468,7 @@ requires-dist = [
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "sphinx", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "tqdm", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+    { name = "tqdm", specifier = ">=4.0.0" },
 ]
 provides-extras = ["dev"]
 

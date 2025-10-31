@@ -209,16 +209,40 @@ uv run pre-commit run --all-files  # Run all checks
 - ⚠️ Data loaders for external sources (Yahoo Finance, etc.)
 - ⚠️ Example strategies and notebooks
 - ⚠️ Performance reporting and visualization
-- ⚠️ Documentation website
+
+**CI/CD:**
+- ✅ Automated testing on pull requests and merges
+- ✅ Code quality checks (ruff, mypy)
+- ✅ Documentation deployment to GitHub Pages
+- ✅ Multi-version Python testing (3.12, 3.13)
 
 ## Requirements
 
 - Python 3.12+
 - pandas 2.0+
 
+## Documentation
+
+Full documentation is available at [GitHub Pages](https://yourusername.github.io/pyfolium/) (once deployed).
+
+To build documentation locally:
+
+```bash
+cd docs
+uv run sphinx-build -b html . _build/html
+# Open docs/_build/html/index.html in your browser
+```
+
+Or use the Makefile:
+
+```bash
+cd docs
+make html
+```
+
 ## License
 
-[Add your license here]
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Contributing
 

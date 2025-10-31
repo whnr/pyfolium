@@ -147,8 +147,58 @@ For systematic trading, extend the ``BaseStrategy`` class:
                return [('AAPL', 100)]
            return []
 
-   # Create and run strategy
+   # Create strategy
    strategy = BuyAndHold(portfolio)
+
+Using BacktestRunner (Recommended)
+-----------------------------------
+
+The ``BacktestRunner`` automates the simulation loop and provides progress tracking, hooks, and error handling:
+
+.. code-block:: python
+
+   from pyfolium.simulation import BacktestRunner
+
+   # Simple usage with progress bar
+   runner = BacktestRunner(portfolio, strategy, show_progress=True)
+   result = runner.run()
+
+   print(f"Final portfolio value: ${result.final_value:.2f}")
+   print(f"Total periods: {result.periods_completed}")
+
+   # Access portfolio and strategy from result
+   print(result.portfolio.history)
+   print(result.strategy.trades_df)
+
+Custom Hooks
+^^^^^^^^^^^^
+
+Add custom behavior at key points in the simulation:
+
+.. code-block:: python
+
+   def log_period_end(context):
+       print(f"Period {context.current_period}: Value = ${context.portfolio_value:.2f}")
+
+   def log_errors(context):
+       print(f"Error in period {context.current_period}: {context.error}")
+
+   runner = BacktestRunner(
+       portfolio,
+       strategy,
+       hooks={
+           'period_end': log_period_end,
+           'error': log_errors
+       }
+   )
+   result = runner.run()
+
+Manual Loop (Alternative)
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more control, you can run the simulation manually:
+
+.. code-block:: python
 
    for period in universe.periods:
        portfolio.collect_income()
@@ -160,5 +210,6 @@ Next Steps
 ----------
 
 * Explore the :doc:`api/index` for detailed API documentation
-* Check the ``examples/`` directory for more complex use cases
+* Check the ``examples/backtest_runner_example.py`` for comprehensive examples
+* Read about :doc:`api/simulation` for BacktestRunner hooks and customization
 * Read about :doc:`api/core` for in-depth understanding of the core components

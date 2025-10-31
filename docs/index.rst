@@ -21,12 +21,15 @@ if only" - used when looking back at missed opportunities), fitting for a backte
 Features
 --------
 
+* **BacktestRunner**: Automated simulation orchestration with custom hooks and progress reporting
 * **Tax Support**: Track short-term and long-term capital gains with FIFO or LIFO accounting
 * **Fee Modeling**: Fixed fees, percentage-based fees, and min/max caps
 * **Income Tracking**: Support for dividends and other asset income
 * **Custom Strategies**: Extensible strategy framework via BaseStrategy ABC
+* **Portfolio Cloning**: Create independent portfolio copies for strategy comparison
 * **Period-based Simulation**: Flexible time period management (daily, monthly, etc.)
 * **Complete History**: Full transaction log and portfolio state history
+* **Data Loading**: Utilities for loading asset data from CSV and DataFrames
 
 Quick Example
 -------------
@@ -34,6 +37,8 @@ Quick Example
 .. code-block:: python
 
    from pyfolium.core import AssetUniverse, Asset, Portfolio, TaxConfig, FeeConfig
+   from pyfolium.strategy import BaseStrategy
+   from pyfolium.simulation import BacktestRunner
    import pandas as pd
 
    # Create asset universe
@@ -41,9 +46,9 @@ Quick Example
 
    # Add assets with price data
    asset_data = pd.DataFrame({
-       'price': [100, 101, 102, 103],
-       'income': [0, 0, 0, 1]
-   }, index=pd.period_range('2024-01-01', periods=4, freq='D'))
+       'price': [100, 101, 102, 103, 105],
+       'income': [0, 0, 0, 1, 0]
+   }, index=pd.period_range('2024-01-01', periods=5, freq='D'))
 
    asset = Asset('AAPL', asset_data, universe)
 
@@ -54,10 +59,7 @@ Quick Example
        holding_period_days=365
    )
 
-   fee_config = FeeConfig(
-       fixed_fee=0,
-       percent_fee=0.001
-   )
+   fee_config = FeeConfig(fixed_fee=0, percent_fee=0.001)
 
    portfolio = Portfolio(
        universe=universe,
@@ -66,10 +68,23 @@ Quick Example
        fee_config=fee_config
    )
 
-   # Execute trades
-   portfolio.buy_asset('AAPL', quantity=10)
-   portfolio.update_history()
-   portfolio.advance_period()
+   # Define a simple strategy
+   class BuyAndHold(BaseStrategy):
+       def get_trades(self):
+           # Buy on first period
+           if self.portfolio.current_period == self.universe.periods[0]:
+               return [('AAPL', 10)]
+           return []
+
+   strategy = BuyAndHold(portfolio, universe)
+
+   # Run backtest with BacktestRunner
+   runner = BacktestRunner(portfolio, strategy, show_progress=True)
+   result = runner.run()
+
+   # Access results
+   print(f"Final portfolio value: ${result.final_value:.2f}")
+   print(result.portfolio.history)
 
 Indices and tables
 ==================

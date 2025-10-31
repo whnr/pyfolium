@@ -214,7 +214,7 @@ uv run pre-commit run --all-files  # Run all checks
 - ✅ Automated testing on pull requests and merges
 - ✅ Code quality checks (ruff, mypy)
 - ✅ Documentation deployment to GitHub Pages
-- ✅ Multi-version Python testing (3.12, 3.13)
+- ✅ Python 3.12 compatibility testing
 
 ## Requirements
 

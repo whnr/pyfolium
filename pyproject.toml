@@ -8,7 +8,11 @@ dependencies = [
     "pandas>=2.0.0",
     "pyarrow>=18.0.0,<19.0.0",
     "pydantic>=2.0.0",
+    "tqdm>=4.0.0",
 ]
+
+[project.scripts]
+setup-dev = "pyfolium._setup:setup_dev_environment"
 
 [project.optional-dependencies]
 dev = [
@@ -48,6 +52,7 @@ pythonpath = "."
 addopts = [
     "--cov=pyfolium.core",
     "--cov=pyfolium.strategy",
+    "--cov=pyfolium.simulation",
     "--cov=pyfolium.data",
     "--cov-branch",
     "--cov-report=xml:coverage/coverage.xml",

@@ -1,225 +1,270 @@
 # Pyfolium
 
-## Historical Hindsight Forecasting Kit
+**Hätte hätte Fahrradkette** — If only, if only...
 
-> **Hätte hätte Fahrradkette** — A German saying meaning "if only, if only" or "shoulda coulda woulda," used when looking back at missed opportunities. The perfect name for a backtesting library, though we opted for "Pyfolium" instead (because Python package names with umlauts are... challenging).
-
-Pyfolium provides a robust framework for simulating historical portfolio performance with support for taxes, capital gains tracking, transaction fees, dividend income, and custom trading strategies.
+A Python backtesting library for portfolio management with support for taxes, fees, income, and custom trading strategies.
 
 ## Features
 
-- **Period-based state machine** enforces correct operation sequencing
-- **Comprehensive tax system** with FIFO/LIFO accounting, short/long-term capital gains
-- **Transaction fee modeling** with fixed, percentage, and min/max fee caps
-- **Dividend/income tracking** and distribution
-- **Full transaction history** and portfolio state snapshots
-- **Strategy framework** for implementing custom trading algorithms
-- **Type-safe** with pandas-stubs integration
+- **BacktestRunner**: Automated simulation loop with hooks and progress reporting
+- **Portfolio Cloning**: Compare strategies and run parameter optimization
+- **Tax System**: FIFO/LIFO accounting with short/long-term capital gains
+- **Transaction Fees**: Fixed, percentage, and min/max fee caps
+- **State Machine**: Enforces correct operation sequencing per period
+- **Strategy Framework**: Abstract base class for custom trading algorithms
+- **Type-Safe**: Pydantic validation and pandas-stubs integration
 
 ## Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/pyfolium.git
-cd pyfolium
-
-# Install using uv (recommended)
+# Using uv (recommended)
 uv sync
+
+# Set up pre-commit hooks (runs ruff automatically on commit)
+uv run setup-dev
 
 # Or using pip
 pip install -e .
+pip install pre-commit
+pre-commit install
 ```
 
 ## Quick Start
 
 ```python
 import pandas as pd
-from pyfolium.core import Asset, AssetUniverse, Portfolio, TaxConfig, FeeConfig
+from pyfolium import Asset, AssetUniverse, Portfolio, BacktestRunner, BaseStrategy
 
-# 1. Create an asset universe
-universe = AssetUniverse(data_frequency='D')  # Daily data
+# 1. Create asset universe
+universe = AssetUniverse(data_frequency='D')
 
-# 2. Add assets with price/income data
-asset_data = pd.DataFrame({
-    'price': [100, 102, 105, 103],
-    'income': [0, 0, 2, 0]  # Quarterly dividend
-}, index=pd.period_range('2024-01', periods=4, freq='D'))
+# 2. Add assets with price data
+dates = pd.period_range('2023-01-01', periods=252, freq='D')
+data = pd.DataFrame({
+    'price': [100 + i * 0.5 for i in range(252)],
+    'income': [1.0 if i % 60 == 0 else 0.0 for i in range(252)]
+}, index=dates)
 
-asset = Asset(
-    symbol='AAPL',
-    asset_universe=universe,
-    asset_data=asset_data,
-    price_column='price',
-    income_column='income'
-)
+Asset('AAPL', universe, data)
 
-# 3. Configure taxes and fees
+# 3. Create portfolio
+portfolio = Portfolio(universe)
+portfolio.collect_income()
+portfolio.move_cash(50000)
+portfolio.update_history()
+portfolio.advance_period()
+
+# 4. Define strategy
+class BuyAndHold(BaseStrategy):
+    def get_trades(self):
+        if not hasattr(self, 'invested'):
+            self.invested = True
+            return [('AAPL', 100)]
+        return []
+
+# 5. Run backtest
+runner = BacktestRunner(portfolio, BuyAndHold(portfolio))
+result = runner.run(progress=True)
+
+print(f"Final cash: ${result.portfolio.cash:,.2f}")
+print(f"Execution time: {result.execution_time:.2f}s")
+```
+
+## BacktestRunner
+
+Automates the period-by-period simulation loop:
+
+```python
+# Simple usage
+runner = BacktestRunner(portfolio, strategy)
+result = runner.run()
+
+# With progress bar
+result = runner.run(progress=True)
+
+# Custom hooks
+def log_value(runner):
+    print(f"Period {runner.current_period}: ${runner.portfolio.cash:,.2f}")
+
+runner.register_hook('period_end', log_value)
+result = runner.run()
+
+# Step-by-step control
+runner = BacktestRunner(portfolio, strategy)
+for _ in range(10):
+    runner.run_period()
+    if runner.portfolio.cash < 0:
+        break
+```
+
+**Available Hooks**: `period_start`, `period_end`, `backtest_start`, `backtest_end`, `error`
+
+## Strategy Comparison
+
+Clone portfolios to compare strategies:
+
+```python
+base = Portfolio(universe)
+base.collect_income()
+base.move_cash(100000)
+base.update_history()
+base.advance_period()
+
+# Run different strategies
+result1 = BacktestRunner(base.clone(), Strategy1(base)).run()
+result2 = BacktestRunner(base.clone(), Strategy2(base)).run()
+
+print(f"Strategy 1: ${result1.portfolio.cash:,.2f}")
+print(f"Strategy 2: ${result2.portfolio.cash:,.2f}")
+```
+
+## Custom Strategies
+
+Subclass `BaseStrategy` and implement `get_trades()`:
+
+```python
+class MomentumStrategy(BaseStrategy):
+    def __init__(self, portfolio, lookback=20):
+        super().__init__(portfolio, parameters={'lookback': lookback})
+        self.lookback = lookback
+
+    def get_trades(self):
+        # Your strategy logic here
+        # Return list of (symbol, quantity) tuples
+        # Positive quantity = buy, negative = sell
+        return [('AAPL', 10), ('GOOGL', -5)]
+```
+
+## Tax and Fee Configuration
+
+```python
+from pyfolium import TaxConfig, FeeConfig
+
+# Configure taxes
 tax_config = TaxConfig(
     short_term_rate=0.30,
     long_term_rate=0.15,
-    long_term_holding_periods=365
+    long_term_holding_period=pd.DateOffset(years=1),
+    withhold_tax=True,
+    tax_strategy='FIFO'  # or 'LIFO'
 )
 
+# Configure fees
 fee_config = FeeConfig(
     fixed_fee=1.0,
-    percentage_fee=0.001,
-    min_fee=1.0,
-    max_fee=20.0
+    percentage_fee=0.001,  # 0.1%
+    minimum_fee=1.0,
+    maximum_fee=20.0
 )
 
-# 4. Create portfolio
-portfolio = Portfolio(
-    asset_universe=universe,
-    initial_cash=10000.0,
-    tax_config=tax_config,
-    fee_config=fee_config
-)
-
-# 5. Run backtest (manual period loop)
-for period in universe.get_period_index_range():
-    # Step 1: Collect income/dividends
-    portfolio.collect_income()
-
-    # Step 2: Execute trades
-    portfolio.buy_asset('AAPL', quantity=10)
-
-    # Step 3: Record history
-    portfolio.update_history()
-
-    # Step 4: Advance to next period
-    portfolio.advance_period()
-
-# Access results
-print(portfolio.history)  # Full portfolio history
-print(portfolio.transactions)  # All transactions
-print(portfolio.holdings)  # Current positions
+portfolio = Portfolio(universe, tax_config=tax_config, fee_config=fee_config)
 ```
 
-## Strategy Framework
-
-Implement custom strategies by subclassing `BaseStrategy`:
+## Data Loading
 
 ```python
-from pyfolium.strategy import BaseStrategy
+from pyfolium import load_from_csv, load_from_dataframe
 
-class BuyAndHold(BaseStrategy):
-    def get_trades(self) -> list[tuple[str, float]]:
-        """Returns list of (symbol, quantity) trades."""
-        period = self.portfolio.current_period
+# From CSV
+universe = load_from_csv('prices.csv', frequency='D')
 
-        # Buy on first period
-        if period == self.asset_universe.get_period_index_range()[0]:
-            return [('AAPL', 10), ('MSFT', 5)]
-        return []
+# From DataFrame
+df = pd.DataFrame(...)
+universe = load_from_dataframe(df, frequency='D')
+```
 
-# Use the strategy
-strategy = BuyAndHold(
-    portfolio=portfolio,
-    asset_universe=universe,
-    parameters={'initial_allocation': 0.8}
-)
+## Development
 
-# Execute strategy steps
-for period in universe.get_period_index_range():
-    portfolio.collect_income()
-    strategy.step()  # Get trades and execute them
-    portfolio.update_history()
-    portfolio.advance_period()
+```bash
+# First-time setup
+uv sync
+uv run setup-dev  # Installs pre-commit hooks
+
+# Run tests
+uv run pytest
+
+# Format code (or let pre-commit do it automatically)
+uv run ruff format .
+
+# Lint (or let pre-commit do it automatically)
+uv run ruff check --fix .
+
+# Type check
+uv run mypy pyfolium/
+
+# Run all pre-commit checks manually
+uv run pre-commit run --all-files
+```
+
+**Note:** After running `setup-dev`, ruff will automatically format and lint your code before each commit.
+
+## Project Structure
+
+```
+pyfolium/
+├── core.py         # Portfolio, Asset, AssetUniverse, configs
+├── strategy.py     # BaseStrategy ABC
+├── simulation.py   # BacktestRunner, BacktestResult
+└── data.py         # Data loading utilities
+
+tests/
+├── core/           # Core component tests
+├── strategy/       # Strategy framework tests
+└── simulation/     # BacktestRunner tests
+
+examples/           # Usage examples
 ```
 
 ## Architecture
 
-### Period Workflow
-
-Pyfolium uses a strict state machine to ensure operations happen in the correct order:
-
+### Period State Machine
+Each period follows strict sequencing:
 ```
-┌─────────────────┐
-│ COLLECT_INCOME  │ → collect_income()
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│   TRANSACT      │ → buy_asset(), sell_asset(), move_cash()
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│     DONE        │ → update_history(), advance_period()
-└────────┬────────┘
-         │
-         └──────────► (next period)
+COLLECT_INCOME → TRANSACT → DONE → advance_period() → COLLECT_INCOME
 ```
 
-### Key Components
+1. `collect_income()` - Distribute dividends
+2. `buy_asset()` / `sell_asset()` / `move_cash()` - Execute trades
+3. `update_history()` - Record period state
+4. `advance_period()` - Move to next period
 
-- **`Asset`**: Individual financial instrument with price and income data
-- **`AssetUniverse`**: Container managing all tradeable assets with aligned price/income matrices
-- **`Portfolio`**: Core backtesting engine tracking cash, positions, transactions, and tax lots
-- **`BaseStrategy`**: Abstract class for implementing trading strategies
-- **`TaxConfig`**: Tax rules (FIFO/LIFO, short/long-term rates, withholding)
-- **`FeeConfig`**: Transaction fee structure (fixed, percentage, caps)
+### Tax Lot Tracking
+- FIFO or LIFO accounting for capital gains
+- Per-share cost basis tracking
+- Automatic short/long-term classification
+- Optional immediate tax withholding
 
-## Tax System
+## Examples
 
-Pyfolium tracks tax lots for accurate capital gains calculations:
-
-- **FIFO or LIFO** accounting for determining which shares are sold
-- **Short-term vs. long-term** capital gains based on holding period
-- **Per-share cost basis** tracking for partial lot sales
-- **Tax withholding** option on gains and income
-- Transaction fees integrated into cost basis
-
-**Note:** Current implementation does not refund withheld tax on losses.
-
-## Development
-
-### Setup
-
-```bash
-uv sync  # Install all dependencies including dev tools
-```
-
-### Testing
-
-```bash
-uv run pytest                    # Run all tests with coverage
-uv run pytest tests/core/        # Run specific test directory
-uv run pytest -k "test_name"     # Run specific test
-```
-
-### Code Quality
-
-```bash
-uv run ruff format .             # Format code
-uv run ruff check --fix .        # Lint and fix issues
-uv run mypy pyfolium/            # Type check
-uv run pre-commit run --all-files  # Run all checks
-```
+See `examples/backtest_runner_example.py` for comprehensive examples including:
+- Simple usage
+- Progress reporting
+- Custom hooks
+- Strategy comparison
+- Step-by-step execution
 
 ## Project Status
 
 **Core Features: Production Ready**
 - ✅ Portfolio backtesting engine
+- ✅ BacktestRunner with hooks and progress reporting
 - ✅ Tax calculations (FIFO/LIFO, capital gains)
 - ✅ Transaction fees
 - ✅ Strategy framework
-- ✅ 70+ comprehensive tests
-
-**Missing/In Development:**
-- ⚠️ High-level backtest runner/automation
-- ⚠️ Data loaders for external sources (Yahoo Finance, etc.)
-- ⚠️ Example strategies and notebooks
-- ⚠️ Performance reporting and visualization
+- ✅ Portfolio cloning for strategy comparison
+- ✅ Data loading utilities
+- ✅ 95+ comprehensive tests
 
 **CI/CD:**
 - ✅ Automated testing on pull requests and merges
 - ✅ Code quality checks (ruff, mypy)
 - ✅ Documentation deployment to GitHub Pages
 - ✅ Python 3.12 compatibility testing
+- ✅ Auto-setup of pre-commit hooks
 
-## Requirements
-
-- Python 3.12+
-- pandas 2.0+
+**In Development:**
+- ⚠️ Performance reporting and visualization
+- ⚠️ Additional data source integrations
 
 ## Documentation
 
@@ -246,13 +291,11 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
-Contributions are welcome! Please ensure tests pass and code is formatted:
+1. Follow existing code style (use `ruff format`)
+2. Add tests for new features
+3. Update documentation
+4. Run `uv run pre-commit run --all-files`
 
-```bash
-uv run pre-commit run --all-files
-uv run pytest
-```
+---
 
-## Acknowledgments
-
-Built with modern Python tooling: uv, ruff, pytest, pydantic, and pandas. Inspired by the desire to answer the eternal question: "What if I had invested in that instead?"
+**Hätte hätte Fahrradkette** — Because hindsight is 20/20 🚲

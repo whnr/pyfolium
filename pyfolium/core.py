@@ -1,3 +1,4 @@
+from copy import deepcopy
 from enum import Enum
 
 import pandas as pd
@@ -368,6 +369,55 @@ class Portfolio:
 
         # initialize the portfolio state tracker
         self._states = pd.Series(index=period_index, data=PortfolioState.COLLECT_INCOME)  # type: ignore
+
+    def clone(self) -> "Portfolio":
+        """Create an independent deep copy of the portfolio.
+
+        This method creates a complete copy of the portfolio with all its state,
+        including transactions, holdings, history, and current position. The copy
+        shares the same AssetUniverse reference (universes are immutable), but all
+        mutable state is independent.
+
+        This is useful for:
+        - Running multiple backtests with different strategies on identical
+          starting conditions
+        - Parameter optimization and sensitivity analysis
+        - Creating snapshots for comparison
+
+        Returns:
+            Portfolio: A deep copy of the portfolio with independent state
+
+        Example:
+            # Run same portfolio with different strategies
+            base_portfolio = Portfolio(universe)
+            base_portfolio.move_cash(100000)
+
+            portfolio1 = base_portfolio.clone()
+            portfolio2 = base_portfolio.clone()
+
+            result1 = BacktestRunner(portfolio1, strategy1).run()
+            result2 = BacktestRunner(portfolio2, strategy2).run()
+        """
+        # Create a new portfolio instance with same universe and configs
+        cloned = Portfolio(
+            asset_universe=self.asset_universe,  # Shared reference (immutable)
+            fee_config=deepcopy(self.fee_config),
+            tax_config=deepcopy(self.tax_config),
+        )
+
+        # Copy all mutable state
+        cloned.cash = self.cash
+        cloned.tax_owed = self.tax_owed
+        cloned._current_period_idx = self._current_period_idx
+        cloned.current_period = self.current_period
+
+        # Deep copy DataFrames (they are mutable)
+        cloned.history = self.history.copy(deep=True)
+        cloned.transactions = self.transactions.copy(deep=True)
+        cloned.holdings = self.holdings.copy(deep=True)
+        cloned._states = self._states.copy(deep=True)
+
+        return cloned
 
     def _check_state(self, expected_state: PortfolioState) -> None:
         current_state = self._states[self.current_period]

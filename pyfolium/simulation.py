@@ -162,7 +162,8 @@ class BacktestRunner:
         while portfolio.current_period < self.start_period:
             try:
                 # Skip periods before start by just advancing
-                if portfolio._states[portfolio.current_period] != PortfolioState.DONE:
+                # pandas-stubs limitation with Period indexing
+                if portfolio._states[portfolio.current_period] != PortfolioState.DONE:  # type: ignore[call-overload]
                     # Need to complete the current period first
                     portfolio.collect_income()
                     portfolio.update_history()
@@ -301,9 +302,10 @@ class BacktestRunner:
         """
         # Calculate total periods to run
         universe_periods = self.portfolio.asset_universe.get_period_index_range()
-        start_idx = universe_periods.get_loc(self.start_period)
-        end_idx = universe_periods.get_loc(self.end_period)
-        total_periods = end_idx - start_idx + 1
+        # get_loc returns int for unique labels (periods are unique in PeriodIndex)
+        start_idx: int = universe_periods.get_loc(self.start_period)  # type: ignore[assignment]
+        end_idx: int = universe_periods.get_loc(self.end_period)  # type: ignore[assignment]
+        total_periods: int = end_idx - start_idx + 1
 
         # Trigger start hooks
         self._trigger_hooks("backtest_start")
@@ -319,7 +321,7 @@ class BacktestRunner:
                 pbar = None
             else:
                 pbar = tqdm(
-                    total=total_periods,
+                    total=int(total_periods),
                     desc="Running backtest",
                     unit="period",
                 )

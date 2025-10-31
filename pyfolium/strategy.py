@@ -52,8 +52,9 @@ class BaseStrategy(ABC):
         success: bool = True,
     ) -> None:
         """Record trade attempt in trades_df"""
-        self.trades_df.loc[len(self.trades_df)] = {  # type: ignore
-            "period": self.portfolio.current_period,
+        # Suppress mypy error for Period in dict (pandas-stubs limitation)
+        self.trades_df.loc[len(self.trades_df)] = {
+            "period": self.portfolio.current_period,  # type: ignore[dict-item]
             "symbol": symbol,
             "quantity": desired_quantity,
             "executed_quantity": executed_quantity,

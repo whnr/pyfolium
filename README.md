@@ -243,9 +243,51 @@ See `examples/backtest_runner_example.py` for comprehensive examples including:
 - Strategy comparison
 - Step-by-step execution
 
+## Project Status
+
+**Core Features: Production Ready**
+- ✅ Portfolio backtesting engine
+- ✅ BacktestRunner with hooks and progress reporting
+- ✅ Tax calculations (FIFO/LIFO, capital gains)
+- ✅ Transaction fees
+- ✅ Strategy framework
+- ✅ Portfolio cloning for strategy comparison
+- ✅ Data loading utilities
+- ✅ 95+ comprehensive tests
+
+**CI/CD:**
+- ✅ Automated testing on pull requests and merges
+- ✅ Code quality checks (ruff, mypy)
+- ✅ Documentation deployment to GitHub Pages
+- ✅ Python 3.12 compatibility testing
+- ✅ Auto-setup of pre-commit hooks
+
+**In Development:**
+- ⚠️ Performance reporting and visualization
+- ⚠️ Additional data source integrations
+
+## Documentation
+
+Full documentation is available at [GitHub Pages](https://yourusername.github.io/pyfolium/) (once deployed).
+
+To build documentation locally:
+
+```bash
+cd docs
+uv run sphinx-build -b html . _build/html
+# Open docs/_build/html/index.html in your browser
+```
+
+Or use the Makefile:
+
+```bash
+cd docs
+make html
+```
+
 ## License
 
-[To be determined]
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Contributing
 

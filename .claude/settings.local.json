@@ -8,7 +8,11 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(gh pr view:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(uv tree:*)",
+      "Bash(git fetch:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []

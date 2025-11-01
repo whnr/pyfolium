@@ -175,12 +175,12 @@ class Asset:
 
         if not precise:
             # Return the last available price before the period
-            return self.price.asof(period)
+            return float(self.price.asof(period))
 
-        return self.price[period]
+        return float(self.price[period])
 
     def get_income_at(self, period: pd.Period, precise: bool = True) -> float:
-        return self.income[period]
+        return float(self.income[period])
 
 
 class AssetUniverse:
@@ -357,8 +357,10 @@ class Portfolio:
         )
         self.history.astype(float)
 
-        self.transactions = pd.DataFrame(columns=Portfolio.transaction_columns)
-        self.transactions = self.transactions.astype(Portfolio.transaction_columns)  # type: ignore
+        self.transactions = pd.DataFrame(
+            columns=list(Portfolio.transaction_columns.keys())
+        )
+        self.transactions = self.transactions.astype(Portfolio.transaction_columns)  # type: ignore[arg-type]
         self.transactions["period"] = self.transactions["period"].astype(
             pd.PeriodDtype(freq=self.asset_universe.data_frequency)
         )
@@ -368,7 +370,7 @@ class Portfolio:
         )
 
         # initialize the portfolio state tracker
-        self._states = pd.Series(index=period_index, data=PortfolioState.COLLECT_INCOME)  # type: ignore
+        self._states = pd.Series(index=period_index, data=PortfolioState.COLLECT_INCOME)
 
     def clone(self) -> "Portfolio":
         """Create an independent deep copy of the portfolio.
@@ -420,7 +422,7 @@ class Portfolio:
         return cloned
 
     def _check_state(self, expected_state: PortfolioState) -> None:
-        current_state = self._states[self.current_period]
+        current_state = self._states[self.current_period]  # type: ignore[call-overload]
         if current_state != expected_state:
             raise RuntimeError(
                 f"Portfolio is in the wrong state: {current_state.value}. "
@@ -503,7 +505,7 @@ class Portfolio:
         If the end of the history is reached, it raises a StopIteration.
 
         """
-        if self._states[self.current_period] != PortfolioState.DONE:
+        if self._states[self.current_period] != PortfolioState.DONE:  # type: ignore[call-overload]
             raise RuntimeError("Last period was not in the DONE state.")
         if self._current_period_idx + 1 >= len(self.history.index):
             raise StopIteration("End of history reached")
@@ -560,8 +562,8 @@ class Portfolio:
         self._check_state(PortfolioState.COLLECT_INCOME)
 
         symbols = (
-            self.holdings.loc[self.current_period]
-            * self.asset_universe.income_matrix.loc[self.current_period]  # type: ignore
+            self.holdings.loc[self.current_period]  # type: ignore[call-overload]
+            * self.asset_universe.income_matrix.loc[self.current_period]  # type: ignore[call-overload]
         )
         symbols = self.holdings.columns[symbols != 0]
 

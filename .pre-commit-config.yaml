@@ -13,17 +13,18 @@ repos:
       # Run the formatter
       - id: ruff-format
 
-  # Mypy - Static type checker (optional, can be slow)
-  # Uncomment to enable type checking in pre-commit
-  # - repo: https://github.com/pre-commit/mirrors-mypy
-  #   rev: v1.18.2
-  #   hooks:
-  #     - id: mypy
-  #       additional_dependencies:
-  #         - pandas-stubs
-  #         - types-pytz
-  #       args: [--config-file=pyproject.toml]
-  #       files: ^pyfolium/
+  # Mypy - Static type checker
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - pandas-stubs
+          - types-pytz
+          - types-tqdm
+          - pydantic
+        args: [--config-file=pyproject.toml]
+        files: ^pyfolium/
 
   # Standard pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks

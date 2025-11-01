@@ -162,7 +162,7 @@ class BacktestRunner:
         while portfolio.current_period < self.start_period:
             try:
                 # Skip periods before start by just advancing
-                if portfolio._states[portfolio.current_period] != PortfolioState.DONE:
+                if portfolio._states[portfolio.current_period] != PortfolioState.DONE:  # type: ignore[call-overload]
                     # Need to complete the current period first
                     portfolio.collect_income()
                     portfolio.update_history()
@@ -301,8 +301,8 @@ class BacktestRunner:
         """
         # Calculate total periods to run
         universe_periods = self.portfolio.asset_universe.get_period_index_range()
-        start_idx = universe_periods.get_loc(self.start_period)
-        end_idx = universe_periods.get_loc(self.end_period)
+        start_idx: int = universe_periods.get_loc(self.start_period)  # type: ignore[assignment]
+        end_idx: int = universe_periods.get_loc(self.end_period)  # type: ignore[assignment]
         total_periods = end_idx - start_idx + 1
 
         # Trigger start hooks

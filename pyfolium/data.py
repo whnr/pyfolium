@@ -67,7 +67,7 @@ def load_from_csv(
             result_data["income"] = data[income_column].fillna(0.0)
         else:
             # If income column not found, create zeros
-            result_data["income"] = 0.0
+            result_data["income"] = pd.Series(0.0, index=data.index)
 
     result = pd.DataFrame(result_data)
 
@@ -140,7 +140,7 @@ def load_from_dataframe(
             result_data["income"] = data[income_column].fillna(0.0)
         else:
             # If income column not specified, create zeros
-            result_data["income"] = 0.0
+            result_data["income"] = pd.Series(0.0, index=data.index)
 
     result = pd.DataFrame(result_data)
 

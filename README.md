@@ -4,6 +4,25 @@
 
 A Python backtesting library for portfolio management with support for taxes, fees, income, and custom trading strategies.
 
+## Philosophy & Scope
+
+Pyfolium is a **backtesting engine**, not a full-featured analytics platform. Our philosophy:
+
+### What Pyfolium Does
+- ✅ **Accurate simulation**: Tax-aware, fee-aware portfolio backtesting
+- ✅ **State management**: Enforces correct transaction ordering and history tracking
+- ✅ **Strategy framework**: Simple, extensible interface for trading algorithms
+- ✅ **Data model**: Clean pandas-based data structures for easy integration
+
+### What Pyfolium Doesn't Do
+- ❌ **Performance analytics**: Use `quantstats`, `pyfolio`, or `empyrical` for Sharpe ratios, drawdowns, etc.
+- ❌ **Visualization**: Use `matplotlib`, `plotly`, or `mplfinance` for charts
+- ❌ **Data fetching**: Use `yfinance`, `alpaca-py`, or similar for market data
+- ❌ **Optimization**: Use `scipy.optimize`, `optuna`, or `hyperopt` for parameter tuning
+- ❌ **Risk models**: Use `PyPortfolioOpt`, `riskfolio-lib` for portfolio optimization
+
+**Integration philosophy**: Pyfolium outputs clean pandas DataFrames (`portfolio.history`, `portfolio.transactions`) that work seamlessly with the ecosystem above. We won't reinvent these wheels.
+
 ## Features
 
 - **BacktestRunner**: Automated simulation loop with hooks and progress reporting

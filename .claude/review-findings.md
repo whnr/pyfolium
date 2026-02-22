@@ -276,6 +276,51 @@ change to the Asset constructor API. Do it if we're doing a breaking change pass
 Consider having `step()` return the trades list or a StepResult for introspection.
 Low priority — strategies can inspect `trades_df`.
 
+### Verbosity / observability model for different consumers
+**Files:** `pyfolium/simulation.py`, `pyfolium/strategy.py`
+**Problem:** The only output mode is tqdm (progress bar for human terminals). This doesn't
+serve the three real consumers:
+
+1. **Human at terminal**: Wants progress bar + final summary. Current tqdm works.
+2. **LLM writing strategies**: Needs structured feedback — did trades execute? What failed?
+   What's my portfolio value? tqdm is noise. Silent ValueError swallowing (P2-6) hides the
+   signal the LLM actually needs.
+3. **Batch/CI runner**: Wants zero output on success, full diagnostics on failure.
+
+**Design:** Replace boolean `progress` with a verbosity/output enum:
+```python
+class OutputMode(str, Enum):
+    SILENT = "silent"      # No output. Errors in result object only.
+    SUMMARY = "summary"    # One-line summary at end (CI/batch).
+    PROGRESS = "progress"  # tqdm bar (human terminal).
+    STRUCTURED = "structured"  # Per-period structured log (LLM/programmatic).
+```
+
+`STRUCTURED` mode would yield/log per-period dicts:
+```python
+{
+    "period": "2024-01-15",
+    "trades_attempted": 3,
+    "trades_executed": 2,
+    "trades_failed": [{"symbol": "AAPL", "qty": 100, "reason": "insufficient cash"}],
+    "portfolio_value": 152340.50,
+    "cash": 12340.50,
+}
+```
+
+This replaces both P2-6 (trade failure warnings become structured data instead of
+`warnings.warn`) and the tqdm logic. It also makes BacktestResult more useful — the
+structured log becomes part of the result, queryable as a DataFrame.
+
+**Interaction with hooks:** The existing hook system (`period_start`, `period_end`) overlaps
+with this. Consider whether hooks should be the mechanism for structured output (hook that
+accumulates structured data) or whether structured output should be built-in and hooks
+remain for custom side effects only. Built-in is cleaner — hooks are user extension points,
+not the primary observability mechanism.
+
+**Implementation order:** After P2-6 (trade failure visibility) and P1-4 (error recovery),
+since this subsumes both.
+
 ### `collect_income` recomputes `earliest_long_term_period` inside loop
 **File:** `pyfolium/core.py:582-585`
 Move computation outside the `for symbol in symbols` loop.
@@ -297,7 +342,8 @@ Recommended sequence for the "big undo session":
 8. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
 9. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
 10. **P1-4** (error recovery) — Design decision needed first
-11. **P2-4** (remove context manager) — Affects examples and tests
-12. **P4-*** (testable examples) — After all API changes settle
+11. **Verbosity/OutputMode** — Subsumes P2-6 and tqdm logic; depends on P1-4
+12. **P2-4** (remove context manager) — Affects examples and tests
+13. **P4-*** (testable examples) — After all API changes settle
 
 Each step should be a single reviewable commit.

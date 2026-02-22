@@ -26,7 +26,7 @@ The project name is a German pun: "Hätte hätte Fahrradkette" (roughly translat
 - Run specific test: `uv run pytest tests/simulation/test_backtest_runner.py::test_name`
 - Tests include automatic coverage reporting to `coverage/` directory
 - Coverage targets: `pyfolium.core`, `pyfolium.strategy`, `pyfolium.simulation`, `pyfolium.data`
-- Current coverage: 94% overall
+- Current coverage: 91% overall
 
 ### Code Quality
 - Format and fix: `uv run ruff format .` (replaces black)
@@ -152,6 +152,6 @@ Recent features:
 - **Pydantic validation**: TaxConfig and FeeConfig with automatic validation
 - **Data loading**: load_from_csv and load_from_dataframe utilities
 - **Comprehensive examples**: 7 usage patterns in examples/backtest_runner_example.py
-- **94% test coverage**: 107 tests covering all modules
+- **91% test coverage**: 107 tests covering all modules
 
-The library is production-ready with a focus on correctness, type safety, and ease of use.
+See `.claude/review-findings.md` for the full architecture review and action plan.

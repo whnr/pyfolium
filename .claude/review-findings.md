@@ -347,3 +347,48 @@ Recommended sequence for the "big undo session":
 13. **P4-*** (testable examples) — After all API changes settle
 
 Each step should be a single reviewable commit.
+
+---
+
+## Cleanup — Done in this session
+
+### Deleted: `TODO.md` (942 lines of AI backlog)
+AI-generated backlog with emojis, time estimates, "rejected" items, and consulting-style
+priority matrices. Superseded entirely by this file. A few items overlapped:
+- Portfolio value helper → P2-5
+- Error message improvements → P2-6, P1-4
+- Naming conventions → noted under camelCase section above
+Everything else was aspirational docs-about-docs or explicitly rejected features.
+
+### Deleted: `docs/` directory (all files)
+Every hand-written code example in docs was hallucinated API — wrong parameter names,
+wrong parameter order, non-existent properties and methods. Specific errors:
+- `Asset('AAPL', asset_data, universe)` — wrong param order (actual: symbol, universe, data)
+- `TaxConfig(holding_period_days=365)` — param doesn't exist
+- `FeeConfig(percent_fee=0.001)` — param doesn't exist (actual: percentage_fee)
+- `Portfolio(universe, initial_cash=10000)` — initial_cash doesn't exist
+- `BacktestRunner(portfolio, strategy, show_progress=True)` — show_progress doesn't exist
+- `result.final_value` — property doesn't exist
+- `context.portfolio_value` — hooks receive runner, not context
+- `runner.is_complete()` — method doesn't exist
+- `load_from_csv(universe=, symbol=, csv_path=)` — completely wrong signature
+
+The autodoc directives (autoclass/autofunction) were fine but useless without buildable docs.
+The `docs/conf.py` referenced `sphinx_autodoc_typehints` which may not be installed.
+**When docs are needed again, write them from scratch against the actual API.**
+
+### Deleted: `.github/workflows/docs.yml`
+GitHub Pages deployment workflow for the deleted docs/ directory. Would fail on every push.
+CI workflow (`.github/workflows/ci.yml`) is real and kept.
+
+### Cleaned: `README.md`
+Fixes applied:
+- Removed all emojis (checkmarks, X marks, warning signs, bicycle)
+- Removed "yourusername" placeholder URL and documentation build section
+- Removed stale "Project Status" section (false "95+ tests" claim, fake CI/CD claims
+  like "Documentation deployment to GitHub Pages", fabricated "In Development" items)
+- Fixed strategy comparison example: strategies were bound to `base` but BacktestRunner
+  got `base.clone()` — strategy would operate on wrong portfolio
+- Fixed data loading section: showed `universe = load_from_csv(...)` but functions return
+  DataFrames, not AssetUniverses
+- Collapsed verbose Philosophy section into two concise paragraphs

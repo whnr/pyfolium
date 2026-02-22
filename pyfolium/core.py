@@ -30,14 +30,6 @@ class TaxConfig(BaseModel):
     withhold_tax: bool = False
     tax_strategy: str = Field(default="FIFO", pattern="^(FIFO|LIFO)$")
 
-    @field_validator("tax_strategy")
-    @classmethod
-    def validate_tax_strategy(cls, v: str) -> str:
-        """Validate that tax strategy is either FIFO or LIFO."""
-        if v not in ["FIFO", "LIFO"]:
-            raise ValueError(f"tax_strategy must be 'FIFO' or 'LIFO', got '{v}'")
-        return v
-
     model_config = {"arbitrary_types_allowed": True}  # Allow pd.DateOffset
 
 
@@ -124,7 +116,7 @@ class Asset:
 
         if self.data.index.freqstr != self.assetUniverse.data_frequency:
             raise ValueError(
-                f"Data frequency of {self.data.index.freqstr}"
+                f"Data frequency of {self.data.index.freqstr} "
                 f"does not match data_frequency of {self.assetUniverse.data_frequency}"
             )
 
@@ -340,8 +332,8 @@ class Portfolio:
         self.asset_universe = asset_universe
         if self.asset_universe.empty:
             raise ValueError(
-                "Asset universe is empty."
-                "all assets must be added before initializing the portfolio"
+                "Asset universe is empty. "
+                "All assets must be added before initializing the portfolio."
             )
         self.fee_config = fee_config or FeeConfig()
         self.tax_config = tax_config or TaxConfig()
@@ -355,7 +347,7 @@ class Portfolio:
         self.history = pd.DataFrame(
             index=period_index, columns=Portfolio.history_columns
         )
-        self.history.astype(float)
+        self.history = self.history.astype(float)
 
         self.transactions = pd.DataFrame(
             columns=list(Portfolio.transaction_columns.keys())
@@ -638,14 +630,14 @@ class Portfolio:
         self._check_state(PortfolioState.TRANSACT)
 
         if amount > 0:
-            type = "deposit"
+            txn_type = "deposit"
         elif amount < 0:
-            type = "withdrawal"
+            txn_type = "withdrawal"
         else:
             return
 
         self._register_transaction(
-            type=type,
+            type=txn_type,
             transaction_amount=amount,
         )
 
@@ -736,8 +728,8 @@ class Portfolio:
         fee = self.fee_config.calculate_fee(quantity * price)
         cost_basis_per_share = price - fee / quantity
 
-        long_term_gains = 0
-        short_term_gains = 0
+        long_term_gains = 0.0
+        short_term_gains = 0.0
 
         earliest_long_term_period = (
             self.current_period.to_timestamp()

@@ -12,14 +12,7 @@ from dataclasses import dataclass, field
 from time import time
 
 import pandas as pd
-
-
-try:
-    from tqdm import tqdm
-
-    TQDM_AVAILABLE = True
-except ImportError:
-    TQDM_AVAILABLE = False
+from tqdm import tqdm
 
 from .core import Portfolio, PortfolioState
 from .strategy import BaseStrategy
@@ -310,19 +303,11 @@ class BacktestRunner:
 
         # Setup progress bar if requested
         if progress:
-            if not TQDM_AVAILABLE:
-                warnings.warn(
-                    "Progress bar requested but tqdm is not installed. "
-                    "Install with: pip install tqdm",
-                    stacklevel=2,
-                )
-                pbar = None
-            else:
-                pbar = tqdm(
-                    total=total_periods,
-                    desc="Running backtest",
-                    unit="period",
-                )
+            pbar = tqdm(
+                total=total_periods,
+                desc="Running backtest",
+                unit="period",
+            )
         else:
             pbar = None
 

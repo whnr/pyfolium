@@ -19,8 +19,8 @@ break at scale and several correctness bugs.
 
 ### What needs work
 - Performance bottlenecks in hot path (O(n²) patterns)
-- Several correctness bugs (no-op astype, DataFrame mutation, ignored parameter)
-- AI bloat (redundant validators, empty context manager, dead code)
+- Correctness bugs (DataFrame mutation, ignored parameter)
+- AI bloat (empty context manager, dead code)
 - Missing features for production use (specific lot identification, portfolio.total_value)
 - Examples not testable
 
@@ -51,7 +51,7 @@ transaction history. O(n) per trade, O(n²) total.
 - Add `trade_fraction` parameter to Portfolio.__init__ (default 0.10)
 - Pre-allocate: `estimated_rows = n_periods * n_assets * trade_fraction`
 - Use write cursor: `self._txn_buffer.iloc[self._txn_cursor] = kwargs`
-- When buffer fills, double it (amortized O(1))
+- When buffer fills, grow by `estimated_rows` (amortized O(1))
 - Expose `transactions` as property: `return self._txn_buffer.iloc[:self._txn_cursor]`
 **Strategy interface:** Unchanged. `portfolio.transactions` returns a DataFrame.
 **Sizing math:** 5,200 periods × 500 assets × 0.10 = 260K rows × 15 cols ≈ 30MB. Trivial.
@@ -76,12 +76,6 @@ The US allows selective lot selling; FIFO/LIFO are just defaults.
 ---
 
 ## P1 — Correctness bugs
-
-### P1-1: `history.astype(float)` is a no-op ✅ FIXED IN THIS SESSION
-**File:** `pyfolium/core.py:358`
-**Problem:** `self.history.astype(float)` creates new DataFrame but result is never assigned.
-History columns remain `object` dtype.
-**Fix:** `self.history = self.history.astype(float)`
 
 ### P1-2: Asset constructor mutates caller's DataFrame
 **File:** `pyfolium/core.py:144`
@@ -132,22 +126,6 @@ def sell_lot(self, symbol: str, lot_id: int, quantity: float):
 
 ## P2 — Design issues & cleanup
 
-### P2-1: Missing space in error message ✅ FIXED IN THIS SESSION
-**File:** `pyfolium/core.py:127-129`
-**Problem:** Two f-strings concatenate without space: "Data frequency of Ddoes not match..."
-**Fix:** Add space at start of second f-string.
-
-### P2-2: `type` shadows Python builtin ✅ FIXED IN THIS SESSION
-**File:** `pyfolium/core.py:640-643`
-**Problem:** `type = "deposit"` shadows `type()`.
-**Fix:** Rename to `txn_type`.
-
-### P2-3: Remove redundant TaxConfig validator ✅ FIXED IN THIS SESSION
-**File:** `pyfolium/core.py:33-39`
-**Problem:** `@field_validator("tax_strategy")` duplicates the `pattern="^(FIFO|LIFO)$"`
-constraint already on the Field definition.
-**Fix:** Remove the `@field_validator` method.
-
 ### P2-4: Remove empty context manager
 **File:** `pyfolium/simulation.py:362-370`
 **Problem:** `__enter__`/`__exit__` do nothing. Context managers manage resources; there are none.
@@ -194,36 +172,6 @@ Only create zeros when `income_column` is None (explicitly opted out).
 **File:** `pyfolium/data.py:56-77` vs `129-150`
 **Problem:** Column selection, rename, and dedup logic is ~90% identical.
 **Fix:** Extract `_build_result_dataframe(data, price_column, income_column)` helper.
-
-### P2-10: `long_term_gains = 0` not `0.0` ✅ FIXED IN THIS SESSION
-**File:** `pyfolium/core.py:739`
-**Fix:** Change to `0.0` for type consistency.
-
----
-
-## P3 — Project configuration
-
-### P3-1: Python version pinning too tight ✅ FIXED IN THIS SESSION
-**File:** `pyproject.toml:6`
-**Problem:** `requires-python = ">=3.12,<3.13"` blocks Python 3.13+.
-**Fix:** `requires-python = ">=3.12"`
-
-### P3-2: Duplicate dev dependency groups ✅ FIXED IN THIS SESSION
-**File:** `pyproject.toml:17-30` vs `36-50`
-**Problem:** Both `[project.optional-dependencies].dev` and `[dependency-groups].dev` exist
-with slightly different contents (types-tqdm version differs).
-**Fix:** Remove `[project.optional-dependencies].dev`, keep `[dependency-groups].dev` (uv standard).
-
-### P3-3: tqdm is required but handled as optional ✅ FIXED IN THIS SESSION
-**File:** `pyproject.toml:11`, `pyfolium/simulation.py:17-22`
-**Problem:** tqdm is in `dependencies` (always installed) but simulation.py has dead
-try/except ImportError code.
-**Fix:** Remove try/except in simulation.py, import tqdm directly.
-
-### P3-4: Update CLAUDE.md coverage claim ✅ FIXED IN THIS SESSION
-**File:** `CLAUDE.md`
-**Problem:** Claims "94% coverage" but actual is 91%.
-**Fix:** Correct to 91%.
 
 ---
 
@@ -330,65 +278,19 @@ Minor optimization but easy fix.
 
 ## Implementation order
 
-Recommended sequence for the "big undo session":
+Recommended sequence:
 
-1. **Trivial fixes** (P1-1, P2-1, P2-2, P2-3, P2-10, P3-*) — ✅ Done in this session
-2. **P1-2** (DataFrame mutation) — Small, isolated, testable
-3. **P1-3** (get_income_at precise) — Small, isolated, testable
-4. **P2-5** (total_value property) — Small, used by everything downstream
-5. **P2-6** (trade failure warnings) — Small, important for AI strategies
-6. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort
-7. **P0-1** (holdings write path) — Core change, needs careful testing
-8. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
-9. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
-10. **P1-4** (error recovery) — Design decision needed first
-11. **Verbosity/OutputMode** — Subsumes P2-6 and tqdm logic; depends on P1-4
-12. **P2-4** (remove context manager) — Affects examples and tests
-13. **P4-*** (testable examples) — After all API changes settle
+1. **P1-2** (DataFrame mutation) — Small, isolated, testable
+2. **P1-3** (get_income_at precise) — Small, isolated, testable
+3. **P2-5** (total_value property) — Small, used by everything downstream
+4. **P2-6** (trade failure warnings) — Small, important for AI strategies
+5. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort
+6. **P0-1** (holdings write path) — Core change, needs careful testing
+7. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
+8. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
+9. **P1-4** (error recovery) — Design decision needed first
+10. **Verbosity/OutputMode** — Subsumes P2-6 and tqdm logic; depends on P1-4
+11. **P2-4** (remove context manager) — Affects examples and tests
+12. **P4-*** (testable examples) — After all API changes settle
 
 Each step should be a single reviewable commit.
-
----
-
-## Cleanup — Done in this session
-
-### Deleted: `TODO.md` (942 lines of AI backlog)
-AI-generated backlog with emojis, time estimates, "rejected" items, and consulting-style
-priority matrices. Superseded entirely by this file. A few items overlapped:
-- Portfolio value helper → P2-5
-- Error message improvements → P2-6, P1-4
-- Naming conventions → noted under camelCase section above
-Everything else was aspirational docs-about-docs or explicitly rejected features.
-
-### Deleted: `docs/` directory (all files)
-Every hand-written code example in docs was hallucinated API — wrong parameter names,
-wrong parameter order, non-existent properties and methods. Specific errors:
-- `Asset('AAPL', asset_data, universe)` — wrong param order (actual: symbol, universe, data)
-- `TaxConfig(holding_period_days=365)` — param doesn't exist
-- `FeeConfig(percent_fee=0.001)` — param doesn't exist (actual: percentage_fee)
-- `Portfolio(universe, initial_cash=10000)` — initial_cash doesn't exist
-- `BacktestRunner(portfolio, strategy, show_progress=True)` — show_progress doesn't exist
-- `result.final_value` — property doesn't exist
-- `context.portfolio_value` — hooks receive runner, not context
-- `runner.is_complete()` — method doesn't exist
-- `load_from_csv(universe=, symbol=, csv_path=)` — completely wrong signature
-
-The autodoc directives (autoclass/autofunction) were fine but useless without buildable docs.
-The `docs/conf.py` referenced `sphinx_autodoc_typehints` which may not be installed.
-**When docs are needed again, write them from scratch against the actual API.**
-
-### Deleted: `.github/workflows/docs.yml`
-GitHub Pages deployment workflow for the deleted docs/ directory. Would fail on every push.
-CI workflow (`.github/workflows/ci.yml`) is real and kept.
-
-### Cleaned: `README.md`
-Fixes applied:
-- Removed all emojis (checkmarks, X marks, warning signs, bicycle)
-- Removed "yourusername" placeholder URL and documentation build section
-- Removed stale "Project Status" section (false "95+ tests" claim, fake CI/CD claims
-  like "Documentation deployment to GitHub Pages", fabricated "In Development" items)
-- Fixed strategy comparison example: strategies were bound to `base` but BacktestRunner
-  got `base.clone()` — strategy would operate on wrong portfolio
-- Fixed data loading section: showed `universe = load_from_csv(...)` but functions return
-  DataFrames, not AssetUniverses
-- Collapsed verbose Philosophy section into two concise paragraphs

@@ -10,9 +10,9 @@ Pyfolium is a **backtesting engine**, not a full-featured analytics platform.
 
 **What it does:** Tax-aware, fee-aware portfolio backtesting with enforced transaction ordering, an extensible strategy framework, and clean pandas-based data structures.
 
-**What it doesn't do:** Performance analytics (use `quantstats`), visualization (use `matplotlib`/`plotly`), data fetching (use `yfinance`), optimization (use `scipy.optimize`/`optuna`), risk models (use `PyPortfolioOpt`).
+**What it doesn't do:** Performance analytics, visualization, data fetching, optimization, risk models.
 
-Pyfolium outputs clean pandas DataFrames (`portfolio.history`, `portfolio.transactions`) that work seamlessly with the ecosystem above.
+Pyfolium outputs clean pandas DataFrames (`portfolio.history`, `portfolio.transactions`) that plug into whichever libraries you prefer for those tasks.
 
 ## Installation
 

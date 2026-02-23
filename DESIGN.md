@@ -77,6 +77,28 @@ The Portfolio is the central object. It tracks:
 
 Some frameworks model multiple cash accounts or currencies. Pyfolium keeps a single cash balance in one implicit base currency. Multi-currency support comes naturally through the asset model: hold a "EUR/USD" asset to represent euro exposure.
 
+### Cash is a transaction, not a precondition
+
+The Portfolio always starts with zero cash. Initial capital enters through `move_cash()` — the same API used for mid-backtest deposits and withdrawals. This is deliberate:
+
+1. **Every cash flow is a transaction.** Deposits, withdrawals, dividends, and trade settlements all appear in the transaction log with a period, a type, and an amount. Initial capital is no exception — it's a deposit that happens on day one.
+
+2. **The transaction log is the complete record.** If initial cash were a constructor parameter, it would be invisible in the transaction history. A user reviewing the log would see trades consuming cash that appeared from nowhere. By requiring an explicit `move_cash()`, the source of every dollar is traceable.
+
+3. **Timing matters.** A backtest that starts with $100k on January 1st is different from one where $50k arrives January 1st and $50k arrives July 1st. Both are expressed naturally with `move_cash()` at the appropriate period.
+
+This does create first-period ceremony that every user must write:
+
+```python
+portfolio = Portfolio(universe)
+portfolio.collect_income()   # transitions state (no holdings yet, so no-op)
+portfolio.move_cash(50000)   # the actual deposit
+portfolio.update_history()   # record period 1
+portfolio.advance_period()   # ready for period 2
+```
+
+This is acknowledged as an ergonomic rough edge. The `collect_income()` call is especially gratuitous — there are no holdings, so there is no income to collect. It exists purely to satisfy the state machine. See the review findings for planned improvements to reduce this boilerplate without breaking the "cash is a transaction" invariant.
+
 ### Immutability boundaries
 
 The AssetUniverse (prices, income) is **shared** across portfolio clones. Price data doesn't change during a backtest — it represents the historical record. Portfolio state (cash, holdings, transactions) is **owned** and deep-copied on `clone()`. This makes strategy comparison efficient: cloning a portfolio doesn't duplicate the (potentially large) price matrix.

@@ -318,6 +318,42 @@ Users should be able to subclass or replace them for their jurisdiction.
 **Depends on:** P0-3 (tax lot data structure) for the lot selection interface.
 **Design doc:** See `DESIGN.md` "Configs as templates" section.
 
+### Initial cash ergonomics (first-period ceremony)
+**Files:** `pyfolium/core.py` (Portfolio), `pyfolium/simulation.py` (BacktestRunner)
+**Problem:** Every user must write 4 lines of boilerplate to seed initial cash:
+```python
+portfolio.collect_income()   # no-op, just satisfies state machine
+portfolio.move_cash(50000)
+portfolio.update_history()
+portfolio.advance_period()
+```
+The `collect_income()` call is especially pointless — no holdings exist yet. This ceremony
+appears in the README, every example, and the clone() docstring. It's the first thing every
+new user encounters, and it's confusing.
+
+**Design constraint:** Cash must remain a transaction (see `DESIGN.md` "Cash is a transaction"
+section). The fix must NOT bypass the transaction log — initial cash must still appear as a
+deposit with a period.
+
+**Options (not mutually exclusive):**
+1. **`Portfolio.seed_cash(amount)`** — convenience method that does the full ceremony:
+   collect_income → move_cash → update_history → advance_period. Only callable on the first
+   period when no holdings exist. Fails loudly if called mid-backtest.
+2. **`BacktestRunner` auto-seed** — if the portfolio is at period 0 with zero cash, let the
+   runner accept an `initial_cash` parameter and do the ceremony before the first strategy
+   period.
+3. **Allow `move_cash` in COLLECT_INCOME state when holdings are empty** — relax the state
+   machine constraint specifically for the "no holdings, no income to collect" case. This is
+   the most minimal change but may be surprising (state machine is strict everywhere else).
+
+**Recommendation:** Option 1 (`seed_cash`) — explicit, discoverable, doesn't complicate the
+state machine or the runner. The README example becomes:
+```python
+portfolio = Portfolio(universe)
+portfolio.seed_cash(50000)
+```
+**Design doc:** See `DESIGN.md` "Cash is a transaction, not a precondition" section.
+
 ---
 
 ## Implementation order
@@ -327,16 +363,17 @@ Recommended sequence:
 1. **P1-2** (DataFrame mutation) — Small, isolated, testable
 2. **P1-3** (get_income_at precise) — Small, isolated, testable
 3. **Data gaps guard** — Asset NaN rejection + trade-time guards. Small, critical for correctness.
-4. **P2-5** (total_value property) — Small, used by everything downstream
-5. **P2-6** (trade failure warnings) — Small, important for AI strategies
-6. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort
-7. **P0-1** (holdings write path) — Core change, needs careful testing
-8. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
-9. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
-10. **Tax/fee extensibility phase 1** — Extract tax methods from Portfolio into TaxConfig. Depends on P0-3.
-11. **P1-4** (error recovery) — Design decision needed first
-12. **Verbosity/OutputMode** — Subsumes P2-6 and tqdm logic; depends on P1-4
-13. **P2-4** (remove context manager) — Affects examples and tests
-14. **P4-*** (testable examples) — After all API changes settle
+4. **Initial cash ergonomics** — `seed_cash()` convenience method. Small, high user-impact.
+5. **P2-5** (total_value property) — Small, used by everything downstream
+6. **P2-6** (trade failure warnings) — Small, important for AI strategies
+7. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort
+8. **P0-1** (holdings write path) — Core change, needs careful testing
+9. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
+10. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
+11. **Tax/fee extensibility phase 1** — Extract tax methods from Portfolio into TaxConfig. Depends on P0-3.
+12. **P1-4** (error recovery) — Design decision needed first
+13. **Verbosity/OutputMode** — Subsumes P2-6 and tqdm logic; depends on P1-4
+14. **P2-4** (remove context manager) — Affects examples and tests
+15. **P4-*** (testable examples) — After all API changes settle
 
 Each step should be a single reviewable commit.

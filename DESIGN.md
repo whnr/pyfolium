@@ -91,6 +91,29 @@ Taxes and fees are **first-class citizens**, not post-hoc adjustments. They flow
 
 This matters because taxes and fees dramatically affect real portfolio performance. A strategy that looks profitable before taxes may be destructive after them. By embedding tax/fee logic in the engine, every strategy automatically gets realistic cost modeling.
 
+### Configs as templates, not final implementations
+
+`TaxConfig` and `FeeConfig` are **reasonable defaults and starting templates**, not exhaustive models of every tax jurisdiction or brokerage fee schedule. Real-world tax systems are staggeringly diverse — US federal vs state rules, wash sale restrictions, international withholding treaties, German *Abgeltungssteuer*, etc. No single config class can capture all of this without becoming an unmaintainable monolith.
+
+The design intent is:
+
+1. **The shipped configs cover the common case** — short-term vs long-term capital gains with FIFO/LIFO, flat-rate income tax withholding, fixed + percentage fees with caps. This handles a large class of backtests accurately enough.
+
+2. **Users should be able to swap in their own implementations** — a user modeling US wash sale rules, German *Verlustverrechnungstöpfe* (loss offset pools), or a brokerage with tiered commission schedules should be able to provide their own tax or fee class that the Portfolio accepts without modification.
+
+3. **The interface is the contract, not the implementation** — Portfolio should depend on *what* a tax/fee config provides (rates, lot ordering, fee calculation), not on *which specific class* provides it. This means:
+   - `FeeConfig.calculate_fee(transaction_value) → float` is the fee interface.
+   - Tax config needs a similar pattern: the tax calculation logic that currently lives in Portfolio's sell and income paths should be delegable to the config.
+
+**Current state:** FeeConfig is partially there — it owns `calculate_fee()`. TaxConfig is purely declarative (rates and strategy name), with the actual gain classification, lot selection, and withholding logic hardcoded in Portfolio. This coupling needs to loosen so that a `WashSaleTaxConfig` or `GermanTaxConfig` can override the tax calculation without forking Portfolio.
+
+**Direction:** Extract tax calculation methods into TaxConfig (or a companion TaxCalculator), so that:
+- The default TaxConfig keeps today's simple behavior
+- Subclasses can override lot selection (specific lot ID), gain classification (wash sale adjustments), or withholding logic (jurisdiction-specific rules)
+- Portfolio calls the config's methods rather than implementing tax math directly
+
+This is tracked in the review findings under the implementation roadmap.
+
 ### Tax lot tracking
 
 Each purchase creates a tax lot with a per-share cost basis. When selling, lots are consumed in FIFO or LIFO order. This enables:
@@ -98,6 +121,35 @@ Each purchase creates a tax lot with a per-share cost basis. When selling, lots 
 - Accurate capital gains calculation for any holding period
 - Short-term vs long-term gain classification
 - Future: specific lot identification for tax-loss harvesting (see roadmap in review findings)
+
+## Data Integrity: Gaps and Guards
+
+The backtesting engine must never silently operate on missing data. A NaN price flowing into a buy or sell produces NaN cash flows, NaN cost basis, and a corrupted backtest — all without raising an error.
+
+### What the engine validates today
+
+- **PeriodIndex required** — Asset rejects data without a PeriodIndex.
+- **Monotonic and unique index** — Asset rejects duplicate or out-of-order periods.
+- **Frequency match** — Asset frequency must match its AssetUniverse.
+- **Non-empty data** — AssetUniverse rejects empty assets.
+
+### What it does not yet validate
+
+- **NaN prices within an asset's own date range** — an asset with `[100, NaN, 102]` passes all current checks. A trade on the NaN period silently produces garbage.
+- **NaN in the price/income matrices after universe alignment** — when assets have different date ranges, `reindex()` fills the non-overlapping regions with NaN. This is expected (you can't trade an asset before it exists), but there is no guard at trade time to prevent buying into a NaN price.
+- **Income column NaN** — similar issue for dividend collection on a NaN income value.
+
+### Design direction
+
+Data gap handling should follow the principle of **fail early, fail loud**:
+
+1. **At Asset construction** — reject price series that contain NaN within their date range. If the user's source data has gaps, they must fill or interpolate before passing it to pyfolium. This is a data preparation concern, not a backtesting engine concern.
+
+2. **At trade time** — guard `buy_asset()` and `sell_asset()` against NaN prices. Raise a clear error: *"Cannot trade {symbol} at period {period}: price is NaN"*. This catches the universe-alignment case where a strategy tries to trade an asset outside its data range.
+
+3. **At income collection** — same guard for `collect_income()` on NaN income values.
+
+The goal is zero silent NaN propagation. If data is missing, the user should know immediately — not discover it when their backtest results look wrong.
 
 ## Strategy Framework
 

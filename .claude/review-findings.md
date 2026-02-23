@@ -274,6 +274,50 @@ since this subsumes both.
 Move computation outside the `for symbol in symbols` loop.
 Minor optimization but easy fix.
 
+### Data gaps guard (NaN price/income protection)
+**Files:** `pyfolium/core.py` (Asset.__init__, Portfolio.buy_asset, Portfolio.sell_asset, Portfolio.collect_income)
+**Problem:** No validation against NaN values in price data. Three failure modes:
+1. Asset created with NaN prices within its own date range — passes all current checks.
+2. Strategy trades an asset at a period outside its data range — price_matrix returns NaN
+   after universe alignment via `reindex()`. Trade silently produces NaN cash flows.
+3. Income collection on NaN income value — same silent corruption.
+
+**Fix (three layers):**
+1. **Asset.__init__**: Reject price series containing NaN:
+   `if self.data[self.price_column].isna().any(): raise ValueError(...)`
+2. **Portfolio.buy_asset / sell_asset**: Guard price lookup:
+   `price = ...; if pd.isna(price): raise ValueError(f"Cannot trade {symbol} at {period}: price is NaN")`
+3. **Portfolio.collect_income**: Guard income lookup:
+   `if pd.isna(income): continue` (zero income is valid; NaN income is missing data, skip with warning)
+
+**Test:** Create asset with NaN gap, verify Asset rejects it. Create universe where asset A
+starts later than asset B, verify buy on A before its start date raises clear error.
+**Design doc:** See `DESIGN.md` "Data Integrity" section.
+
+### Tax/fee config extensibility (template pattern)
+**Files:** `pyfolium/core.py` (TaxConfig, FeeConfig, Portfolio.sell_asset, Portfolio.collect_income)
+**Problem:** TaxConfig is purely declarative — rates and a strategy name string. All tax
+calculation logic (lot selection, gain classification, withholding) is hardcoded in Portfolio's
+sell and income paths. Users cannot swap in custom tax rules (wash sales, jurisdiction-specific
+logic) without modifying Portfolio itself.
+
+FeeConfig is better — it owns `calculate_fee()` — but still tightly coupled.
+
+**Design intent:** Configs are templates and reasonable defaults, not exhaustive implementations.
+Users should be able to subclass or replace them for their jurisdiction.
+
+**Fix (phased):**
+1. **Phase 1:** Extract tax calculation into methods on TaxConfig:
+   - `classify_gain(purchase_period, sale_period) → "short_term" | "long_term"`
+   - `calculate_tax(short_term_gains, long_term_gains) → float`
+   - `select_lots(lots, strategy) → ordered_lots` (subsumes FIFO/LIFO + specific lot ID)
+2. **Phase 2:** Portfolio calls config methods instead of implementing tax math directly.
+   Default TaxConfig keeps today's behavior. Subclasses override for wash sales, etc.
+3. **Phase 3:** Same pattern for FeeConfig if needed (tiered commissions, etc.)
+
+**Depends on:** P0-3 (tax lot data structure) for the lot selection interface.
+**Design doc:** See `DESIGN.md` "Configs as templates" section.
+
 ---
 
 ## Implementation order
@@ -282,15 +326,17 @@ Recommended sequence:
 
 1. **P1-2** (DataFrame mutation) — Small, isolated, testable
 2. **P1-3** (get_income_at precise) — Small, isolated, testable
-3. **P2-5** (total_value property) — Small, used by everything downstream
-4. **P2-6** (trade failure warnings) — Small, important for AI strategies
-5. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort
-6. **P0-1** (holdings write path) — Core change, needs careful testing
-7. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
-8. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
-9. **P1-4** (error recovery) — Design decision needed first
-10. **Verbosity/OutputMode** — Subsumes P2-6 and tqdm logic; depends on P1-4
-11. **P2-4** (remove context manager) — Affects examples and tests
-12. **P4-*** (testable examples) — After all API changes settle
+3. **Data gaps guard** — Asset NaN rejection + trade-time guards. Small, critical for correctness.
+4. **P2-5** (total_value property) — Small, used by everything downstream
+5. **P2-6** (trade failure warnings) — Small, important for AI strategies
+6. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort
+7. **P0-1** (holdings write path) — Core change, needs careful testing
+8. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
+9. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
+10. **Tax/fee extensibility phase 1** — Extract tax methods from Portfolio into TaxConfig. Depends on P0-3.
+11. **P1-4** (error recovery) — Design decision needed first
+12. **Verbosity/OutputMode** — Subsumes P2-6 and tqdm logic; depends on P1-4
+13. **P2-4** (remove context manager) — Affects examples and tests
+14. **P4-*** (testable examples) — After all API changes settle
 
 Each step should be a single reviewable commit.

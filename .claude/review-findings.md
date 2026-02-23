@@ -72,6 +72,7 @@ to find matching buy lots via DataFrame boolean indexing.
 New `portfolio.open_lots_df` property for DataFrame view.
 **Why exposed:** Specific lot identification is required for tax-loss harvesting strategies.
 The US allows selective lot selling; FIFO/LIFO are just defaults.
+**Design doc update:** Update `DESIGN.md` "Tax lot tracking" section once implemented.
 
 ---
 
@@ -108,6 +109,7 @@ collected, holdings not updated, history incomplete. Silent corruption is worse 
 3. Never force `_states` to DONE — that's lying about what happened
 **Decision needed:** Discuss which behavior is right for AI-generated strategies.
 Strict is safer; lenient is useful during strategy development.
+**Design doc update:** Depends on logging architecture — error handling feeds into observability model.
 
 ### P1-5: Add `sell_lot()` method for specific lot identification
 **File:** `pyfolium/core.py` (new method on Portfolio)
@@ -204,6 +206,15 @@ def test_example_simple():
 **Check:** Ensure examples directory is importable from tests.
 May need `examples/__init__.py` or pytest `pythonpath` config update.
 
+### P4-4: Audit `examples/backtest_runner_example.py` for correctness
+**File:** `examples/backtest_runner_example.py`
+**Problem:** Flagged during PR review as potentially unreliable AI-generated code.
+Needs verification that all 7 examples actually run successfully and produce
+correct results — not just plausible-looking code that compiles.
+**Fix:** Run the file end-to-end, fix any failures, remove Example 7 (context manager —
+see P2-4). Update all examples to use the new strategy-owns-start-conditions pattern
+once that's implemented.
+
 ---
 
 ## Additional notes from review
@@ -269,30 +280,78 @@ not the primary observability mechanism.
 **Implementation order:** After P2-6 (trade failure visibility) and P1-4 (error recovery),
 since this subsumes both.
 
+### Logging architecture: replace `.errors` with `.log`
+**Files:** `pyfolium/simulation.py` (BacktestRunner, BacktestResult)
+**Problem:** BacktestRunner has an `_errors` list of `(period, exception)` tuples. This is
+too narrow — it only captures exceptions, not warnings, trade failures, or general diagnostics.
+There's no structured way to inspect what happened during a backtest beyond the raw
+transaction log.
+
+**Design:**
+Replace `_errors` / `errors` with a `log` attribute that captures structured entries:
+
+```python
+@dataclass
+class LogEntry:
+    severity: str       # "DEBUG", "INFO", "WARNING", "ERROR"
+    period: pd.Period   # simulation period when event occurred
+    message: str        # human-readable description
+    data: dict | None   # optional structured data (trade details, etc.)
+```
+
+Key properties:
+- **Terminal output**: both wall-clock timestamp AND period/period timestamp on every line.
+  Example: `[14:32:05 | 2024-03-15] WARNING: Trade failed: AAPL qty=100 — price is NaN`
+- **Result data structure**: period numbers/timestamps, no wall-clock (irrelevant after the
+  fact). The log becomes a queryable DataFrame in `BacktestResult`.
+- **Standard severity levels**: DEBUG (trade details), INFO (period summaries), WARNING
+  (failed trades, negative cash), ERROR (exceptions caught by the runner).
+- **Subsumes current patterns**: `warnings.warn()` calls become log entries. `_errors` list
+  becomes `log.query("severity == 'ERROR'")`. tqdm progress can read from the log stream.
+- **Interaction with OutputMode/Verbosity**: The Verbosity enum (SILENT, SUMMARY, PROGRESS,
+  STRUCTURED) controls *what gets printed to terminal*. The log always captures everything
+  regardless of verbosity — it's the complete record, print settings are just filters.
+
+**Depends on:** P1-4 (error recovery design decision) — the logging system needs to know
+what severity to assign to recovered vs fatal errors.
+**Design doc update:** Consider adding a "Observability" section to `DESIGN.md` once implemented.
+
 ### `collect_income` recomputes `earliest_long_term_period` inside loop
 **File:** `pyfolium/core.py:582-585`
 Move computation outside the `for symbol in symbols` loop.
 Minor optimization but easy fix.
 
-### Data gaps guard (NaN price/income protection)
-**Files:** `pyfolium/core.py` (Asset.__init__, Portfolio.buy_asset, Portfolio.sell_asset, Portfolio.collect_income)
-**Problem:** No validation against NaN values in price data. Three failure modes:
-1. Asset created with NaN prices within its own date range — passes all current checks.
+### Data gaps: validate at init, graceful at trade time
+**Files:** `pyfolium/core.py` (Asset.__init__, Portfolio.buy_asset, Portfolio.sell_asset, Portfolio.collect_income),
+`pyfolium/strategy.py` (BaseStrategy.execute_trades)
+**Problem:** No validation against NaN values in price data. Two distinct failure modes:
+1. Asset created with NaN prices within its own declared date range — data corruption that
+   passes all current checks silently.
 2. Strategy trades an asset at a period outside its data range — price_matrix returns NaN
    after universe alignment via `reindex()`. Trade silently produces NaN cash flows.
-3. Income collection on NaN income value — same silent corruption.
 
-**Fix (three layers):**
-1. **Asset.__init__**: Reject price series containing NaN:
+**Fix (two layers, different philosophies):**
+1. **Asset.__init__ (data quality gate):** Reject price series containing NaN:
    `if self.data[self.price_column].isna().any(): raise ValueError(...)`
-2. **Portfolio.buy_asset / sell_asset**: Guard price lookup:
-   `price = ...; if pd.isna(price): raise ValueError(f"Cannot trade {symbol} at {period}: price is NaN")`
-3. **Portfolio.collect_income**: Guard income lookup:
-   `if pd.isna(income): continue` (zero income is valid; NaN income is missing data, skip with warning)
+   Users must provide clean data for the periods they declare. Gaps from weekends, holidays,
+   or different asset date ranges are handled by the universe alignment — not by allowing
+   NaN in the source data.
 
-**Test:** Create asset with NaN gap, verify Asset rejects it. Create universe where asset A
-starts later than asset B, verify buy on A before its start date raises clear error.
-**Design doc:** See `DESIGN.md` "Data Integrity" section.
+2. **Portfolio.buy_asset / sell_asset (graceful failure):** Guard price lookup:
+   `price = ...; if pd.isna(price): raise ValueError(f"Cannot trade {symbol} at {period}: price is NaN")`
+   This ValueError is already caught by `BaseStrategy.execute_trades()`, which records
+   the trade with `success=False` in `trades_df`. The strategy continues executing.
+   **Also:** `execute_trades` currently only catches `ValueError`. Add `KeyError` to the
+   except clause — a price lookup on a period outside the asset's range may raise KeyError
+   instead of returning NaN depending on the access path.
+
+3. **Portfolio.collect_income:** Treat NaN income as zero income (nothing to collect where
+   there is no data). Not an error — just skip silently.
+
+**Test:** Create asset with NaN gap, verify Asset rejects it at construction. Create universe
+where asset A starts later than asset B, attempt buy on A before its start date, verify trade
+returns `success=False` in `trades_df` rather than crashing.
+**Design doc update:** `DESIGN.md` "Data Integrity" section — already updated.
 
 ### Tax/fee config extensibility (template pattern)
 **Files:** `pyfolium/core.py` (TaxConfig, FeeConfig, Portfolio.sell_asset, Portfolio.collect_income)
@@ -318,8 +377,8 @@ Users should be able to subclass or replace them for their jurisdiction.
 **Depends on:** P0-3 (tax lot data structure) for the lot selection interface.
 **Design doc:** See `DESIGN.md` "Configs as templates" section.
 
-### Initial cash ergonomics (first-period ceremony)
-**Files:** `pyfolium/core.py` (Portfolio), `pyfolium/simulation.py` (BacktestRunner)
+### Strategy owns start conditions (initial cash + start period)
+**Files:** `pyfolium/strategy.py` (BaseStrategy), `pyfolium/simulation.py` (BacktestRunner)
 **Problem:** Every user must write 4 lines of boilerplate to seed initial cash:
 ```python
 portfolio.collect_income()   # no-op, just satisfies state machine
@@ -327,32 +386,39 @@ portfolio.move_cash(50000)
 portfolio.update_history()
 portfolio.advance_period()
 ```
-The `collect_income()` call is especially pointless — no holdings exist yet. This ceremony
-appears in the README, every example, and the clone() docstring. It's the first thing every
-new user encounters, and it's confusing.
+This ceremony appears in the README, every example, and the clone() docstring. It's the
+first thing every new user encounters, and it's confusing.
 
-**Design constraint:** Cash must remain a transaction (see `DESIGN.md` "Cash is a transaction"
-section). The fix must NOT bypass the transaction log — initial cash must still appear as a
-deposit with a period.
+**Design principle:** Execution logic — including when to start investing and how much capital
+to deploy — belongs to the **strategy**, not to manual user ceremony. Cash must still be a
+transaction (it appears in the transaction log at the correct period).
 
-**Options (not mutually exclusive):**
-1. **`Portfolio.seed_cash(amount)`** — convenience method that does the full ceremony:
-   collect_income → move_cash → update_history → advance_period. Only callable on the first
-   period when no holdings exist. Fails loudly if called mid-backtest.
-2. **`BacktestRunner` auto-seed** — if the portfolio is at period 0 with zero cash, let the
-   runner accept an `initial_cash` parameter and do the ceremony before the first strategy
-   period.
-3. **Allow `move_cash` in COLLECT_INCOME state when holdings are empty** — relax the state
-   machine constraint specifically for the "no holdings, no income to collect" case. This is
-   the most minimal change but may be surprising (state machine is strict everywhere else).
+**Fix:**
+1. **BaseStrategy.__init__** gains `initial_cash: float | None = None` and
+   `start_period: pd.Period | None = None` parameters, stored alongside existing `parameters`.
+2. **BacktestRunner** reads `strategy.initial_cash` and `strategy.start_period`:
+   - If `start_period` is set, runner fast-forwards to that period.
+   - Fast-forward for empty portfolios (no holdings, no cash) should be a true index skip —
+     just advance `_current_period_idx` without running collect_income/update_history for
+     each intermediate period. No state to preserve means no ceremony needed.
+   - On the first strategy period, runner deposits `initial_cash` via `move_cash()` before
+     calling `strategy.step()`.
+3. **Result:** The README example becomes:
+   ```python
+   portfolio = Portfolio(universe)
+   strategy = BuyAndHold(portfolio, initial_cash=50000)
+   result = BacktestRunner(portfolio, strategy).run()
+   ```
 
-**Recommendation:** Option 1 (`seed_cash`) — explicit, discoverable, doesn't complicate the
-state machine or the runner. The README example becomes:
-```python
-portfolio = Portfolio(universe)
-portfolio.seed_cash(50000)
-```
-**Design doc:** See `DESIGN.md` "Cash is a transaction, not a precondition" section.
+**Warmup data use case:** A strategy needing 200 days of moving-average history sets
+`start_period` to day 201. The runner fast-forwards there (no ceremony for empty periods),
+deposits cash, and begins. The strategy has access to the full AssetUniverse price history
+for lookback calculations.
+
+**Depends on:** Nothing — can be implemented independently.
+**Also updates:** README example, all examples in `examples/backtest_runner_example.py`,
+clone() docstring in `core.py`.
+**Design doc update:** `DESIGN.md` "Strategy owns its start conditions" section — already updated.
 
 ---
 
@@ -362,8 +428,8 @@ Recommended sequence:
 
 1. **P1-2** (DataFrame mutation) — Small, isolated, testable
 2. **P1-3** (get_income_at precise) — Small, isolated, testable
-3. **Data gaps guard** — Asset NaN rejection + trade-time guards. Small, critical for correctness.
-4. **Initial cash ergonomics** — `seed_cash()` convenience method. Small, high user-impact.
+3. **Data gaps** — Asset NaN rejection at init + trade-time graceful failure via success=False
+4. **Strategy start conditions** — `initial_cash` + `start_period` on BaseStrategy, runner sync. High user-impact, changes the primary API surface.
 5. **P2-5** (total_value property) — Small, used by everything downstream
 6. **P2-6** (trade failure warnings) — Small, important for AI strategies
 7. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort
@@ -372,8 +438,9 @@ Recommended sequence:
 10. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
 11. **Tax/fee extensibility phase 1** — Extract tax methods from Portfolio into TaxConfig. Depends on P0-3.
 12. **P1-4** (error recovery) — Design decision needed first
-13. **Verbosity/OutputMode** — Subsumes P2-6 and tqdm logic; depends on P1-4
-14. **P2-4** (remove context manager) — Affects examples and tests
-15. **P4-*** (testable examples) — After all API changes settle
+13. **Logging architecture** — Replace `.errors` with `.log`, structured entries. Depends on P1-4.
+14. **Verbosity/OutputMode** — Terminal filtering over the log. Subsumes P2-6 and tqdm logic.
+15. **P2-4** (remove context manager) — Affects examples and tests
+16. **P4-*** (testable examples, audit existing) — After all API changes settle
 
 Each step should be a single reviewable commit.

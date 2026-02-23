@@ -50,14 +50,16 @@ Within each period, operations follow a strict sequence enforced by a state mach
 COLLECT_INCOME → TRANSACT → DONE → advance_period() → COLLECT_INCOME
 ```
 
-This ordering exists because it mirrors how real portfolios work:
+This ordering is an **accounting convention**, not a model of how markets actually work. Real dividends involve three separate dates (ex-dividend, record, payment) that are weeks apart and don't align to any period boundary. Real markets are continuous — you can buy a stock, receive a bond coupon, and sell something else in any order within the same day.
 
-1. **Income first** — dividends and coupons arrive before trading opens.
+The state machine exists to **prevent accounting ambiguity in discrete simulation**:
+
+1. **Collect income** — settle all income for the period before any trades execute. This avoids the question: *"Should a dividend earned this period be available to spend this period?"* The convention says yes — income is collected first, then available for trading.
 2. **Transact** — buy, sell, move cash. Multiple transactions allowed per period.
 3. **Record** — snapshot the portfolio state into history.
 4. **Advance** — move to the next period.
 
-The state machine prevents impossible operations (e.g., buying before income is collected, or recording history mid-trade). It's strict by design: silent mis-ordering would produce subtly wrong backtests that are hard to debug.
+The strictness is deliberate. Silent mis-ordering would produce subtly wrong backtests — for instance, recording history before a trade would capture stale state, or trading before income collection could produce different results depending on execution order. The state machine makes the convention explicit and enforced rather than implicit and fragile.
 
 ### Frequency consistency
 
@@ -81,27 +83,47 @@ Some frameworks model multiple cash accounts or currencies. Pyfolium keeps a sin
 
 The Portfolio always starts with zero cash. Initial capital enters through `move_cash()` — the same API used for mid-backtest deposits and withdrawals. This is deliberate:
 
-1. **Every cash flow is a transaction.** Deposits, withdrawals, dividends, and trade settlements all appear in the transaction log with a period, a type, and an amount. Initial capital is no exception — it's a deposit that happens on day one.
+1. **Every cash flow is a transaction.** Deposits, withdrawals, dividends, and trade settlements all appear in the transaction log with a period, a type, and an amount. Initial capital is no exception — it's a deposit that happens at the start of the strategy's investment period.
 
-2. **The transaction log is the complete record.** If initial cash were a constructor parameter, it would be invisible in the transaction history. A user reviewing the log would see trades consuming cash that appeared from nowhere. By requiring an explicit `move_cash()`, the source of every dollar is traceable.
+2. **The transaction log is the complete record.** If initial cash were a constructor parameter, it would be invisible in the transaction history. A user reviewing the log would see trades consuming cash that appeared from nowhere. By requiring an explicit deposit, the source of every dollar is traceable.
 
 3. **Timing matters.** A backtest that starts with $100k on January 1st is different from one where $50k arrives January 1st and $50k arrives July 1st. Both are expressed naturally with `move_cash()` at the appropriate period.
 
-This does create first-period ceremony that every user must write:
+### Strategy owns its start conditions
+
+The execution logic — including when to start investing and how much initial capital to deploy — belongs to the **strategy**, not to manual user ceremony. A strategy declares its `initial_cash` and optionally its `start_period`. The BacktestRunner reads these, fast-forwards to the right period, deposits the cash as the first transaction, and begins the simulation loop.
 
 ```python
 portfolio = Portfolio(universe)
-portfolio.collect_income()   # transitions state (no holdings yet, so no-op)
-portfolio.move_cash(50000)   # the actual deposit
-portfolio.update_history()   # record period 1
-portfolio.advance_period()   # ready for period 2
+strategy = BuyAndHold(portfolio, initial_cash=50000)
+result = BacktestRunner(portfolio, strategy).run()
 ```
 
-This is acknowledged as an ergonomic rough edge. The `collect_income()` call is especially gratuitous — there are no holdings, so there is no income to collect. It exists purely to satisfy the state machine. See the review findings for planned improvements to reduce this boilerplate without breaking the "cash is a transaction" invariant.
+This solves three problems at once:
+
+- **No boilerplate.** The four-line ceremony (`collect_income` → `move_cash` → `update_history` → `advance_period`) disappears. The runner handles state-machine traversal.
+- **Warmup data.** A strategy that needs 200 days of moving-average data sets `start_period` to day 201. The runner fast-forwards there without processing empty periods.
+- **Cash stays a transaction.** The deposit still appears in the transaction log at the correct period. The invariant is preserved — the runner just automates the mechanics.
+
+The `clone()` workflow also simplifies — clone a portfolio, create different strategies with the same `initial_cash`, and compare:
+
+```python
+portfolio = Portfolio(universe)
+s1 = AggressiveStrategy(portfolio.clone(), initial_cash=100000)
+s2 = ConservativeStrategy(portfolio.clone(), initial_cash=100000)
+result1 = BacktestRunner(s1.portfolio, s1).run()
+result2 = BacktestRunner(s2.portfolio, s2).run()
+```
+
+See the review findings for implementation details.
 
 ### Immutability boundaries
 
 The AssetUniverse (prices, income) is **shared** across portfolio clones. Price data doesn't change during a backtest — it represents the historical record. Portfolio state (cash, holdings, transactions) is **owned** and deep-copied on `clone()`. This makes strategy comparison efficient: cloning a portfolio doesn't duplicate the (potentially large) price matrix.
+
+### Cloning preserves time position
+
+`clone()` copies the portfolio's current period, state machine position, and complete history. A clone made at period 50 starts at period 50 with all transactions and holdings intact. This enables mid-backtest branching: run a common strategy for 100 periods, clone, then diverge with different strategies from that checkpoint. Each clone is fully independent — trades in one don't affect the other.
 
 ## Tax and Fee Awareness
 
@@ -144,34 +166,40 @@ Each purchase creates a tax lot with a per-share cost basis. When selling, lots 
 - Short-term vs long-term gain classification
 - Future: specific lot identification for tax-loss harvesting (see roadmap in review findings)
 
-## Data Integrity: Gaps and Guards
+## Data Integrity: Gaps and Graceful Failure
 
-The backtesting engine must never silently operate on missing data. A NaN price flowing into a buy or sell produces NaN cash flows, NaN cost basis, and a corrupted backtest — all without raising an error.
+Price data has gaps. There are no prices on weekends. Assets start and end on different dates. Quarterly data expanded to daily frequency has NaN on most days. **This is normal, not an error.**
 
-### What the engine validates today
+Pyfolium handles data gaps at two levels with different philosophies:
 
-- **PeriodIndex required** — Asset rejects data without a PeriodIndex.
-- **Monotonic and unique index** — Asset rejects duplicate or out-of-order periods.
-- **Frequency match** — Asset frequency must match its AssetUniverse.
-- **Non-empty data** — AssetUniverse rejects empty assets.
+### At construction: clean data in
 
-### What it does not yet validate
+Asset validates that the data the user *actually provides* is clean:
 
-- **NaN prices within an asset's own date range** — an asset with `[100, NaN, 102]` passes all current checks. A trade on the NaN period silently produces garbage.
-- **NaN in the price/income matrices after universe alignment** — when assets have different date ranges, `reindex()` fills the non-overlapping regions with NaN. This is expected (you can't trade an asset before it exists), but there is no guard at trade time to prevent buying into a NaN price.
-- **Income column NaN** — similar issue for dividend collection on a NaN income value.
+- **PeriodIndex required** — rejects data without a PeriodIndex.
+- **Monotonic and unique index** — rejects duplicate or out-of-order periods.
+- **Frequency match** — frequency must match the AssetUniverse.
+- **No NaN in price column** — rejects price series containing NaN. If the user provides 252 daily prices, all 252 must be real numbers. This catches data corruption at the source — a CSV with missing rows, a bad API response, a merge gone wrong.
 
-### Design direction
+This is a data quality gate. Pyfolium trusts the data it's given, so the data must be trustworthy. If your source data has gaps (weekends, holidays), clean or filter it *before* constructing the Asset. Quarterly dividends on a daily-frequency asset? Provide only the days that have prices. The AssetUniverse handles alignment.
 
-Data gap handling should follow the principle of **fail early, fail loud**:
+### At trade time: graceful failure
 
-1. **At Asset construction** — reject price series that contain NaN within their date range. If the user's source data has gaps, they must fill or interpolate before passing it to pyfolium. This is a data preparation concern, not a backtesting engine concern.
+When the AssetUniverse aligns assets with different date ranges via `reindex()`, it fills non-overlapping regions with NaN. This is expected — you can't trade an asset before it exists or after it delists.
 
-2. **At trade time** — guard `buy_asset()` and `sell_asset()` against NaN prices. Raise a clear error: *"Cannot trade {symbol} at period {period}: price is NaN"*. This catches the universe-alignment case where a strategy tries to trade an asset outside its data range.
+If a strategy attempts a trade at a period where the price is NaN, the trade **fails gracefully** rather than crashing the backtest:
 
-3. **At income collection** — same guard for `collect_income()` on NaN income values.
+- `buy_asset()` / `sell_asset()` detect the NaN price and raise a `ValueError`.
+- BaseStrategy's `execute_trades()` catches this and records the trade with `success=False` in `trades_df`.
+- The strategy continues executing. It can handle the failure by:
+  1. Checking data availability *before* placing a trade.
+  2. Inspecting `trades_df` for failed trades after the period.
 
-The goal is zero silent NaN propagation. If data is missing, the user should know immediately — not discover it when their backtest results look wrong.
+This means a strategy that blindly trades every period won't crash — it will accumulate `success=False` entries that the user can inspect. A strategy that checks prices first will never encounter the failure at all.
+
+### Income gaps
+
+NaN income values (from universe alignment) are treated as zero income for that period. There is nothing to collect where there is no data — this is not an error condition.
 
 ## Strategy Framework
 
@@ -244,11 +272,11 @@ To keep the scope clear, here are explicit non-goals:
 
 Pyfolium produces the raw material (portfolio history as DataFrames) that these tools consume.
 
-## Conventions
+## Code Conventions
 
 - **Google-style docstrings** for all public APIs.
 - **Type hints** on public methods; pandas-stubs for DataFrame typing.
 - **Ruff** for formatting and linting (replaces black, isort, flake8).
-- **88-character line length** (black default).
+- **88-character line length.**
 - **Pydantic** for configuration validation (TaxConfig, FeeConfig).
 - **PeriodIndex** throughout — not DatetimeIndex. Periods are the natural unit for discrete-time simulation.

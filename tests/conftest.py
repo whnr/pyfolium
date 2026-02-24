@@ -55,7 +55,8 @@ def sample_asset_data(day_date_range):
     """Fixture providing sample asset data with price and dividend history"""
     np.random.seed(42)
     price_data = 100 * (1 + np.random.randn(len(day_date_range)).cumsum() * 0.02)
-    dividend_data = np.zeros(len(day_date_range))
+    # dividend_data = np.zeros(len(day_date_range))
+    dividend_data = np.full(len(day_date_range), np.nan)
     dividend_data[::90] = price_data[::90] * 0.01  # Quarterly dividends
 
     return pd.DataFrame(

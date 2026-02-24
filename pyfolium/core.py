@@ -1,5 +1,6 @@
 from copy import deepcopy
 from enum import Enum
+from math import isnan
 
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
@@ -171,8 +172,19 @@ class Asset:
 
         return float(self.price[period])
 
-    def get_income_at(self, period: pd.Period, precise: bool = True) -> float:
-        return float(self.income[period])
+    def get_income_at(self, period: pd.Period) -> float:
+        """
+        Get the income of the asset at the given period
+
+        Args:
+            period (pd.Period): The period to get the price for
+
+        Returns:
+            float: The income of the asset at the given period.
+                Will return `0.0` if there was `nan` income.
+        """
+        value = float(self.income[period])
+        return 0.0 if isnan(value) else value
 
 
 class AssetUniverse:

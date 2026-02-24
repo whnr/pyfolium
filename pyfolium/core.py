@@ -104,7 +104,7 @@ class Asset:
     ):
         self.symbol = symbol
         self.assetUniverse = assetUniverse
-        self.data = data
+        self.data = data.copy()
         self.price_column = price_column
         self.metadata = metadata
 

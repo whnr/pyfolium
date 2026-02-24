@@ -213,7 +213,7 @@ def test_progress_bar_with_tqdm(portfolio, strategy):
 
 
 def test_error_during_strategy_execution(asset_universe):
-    """Test error handling when strategy raises exception."""
+    """Lenient mode records errors and continues without corrupting state."""
 
     class FailingStrategy(BaseStrategy):
         def __init__(self, portfolio):
@@ -232,7 +232,7 @@ def test_error_during_strategy_execution(asset_universe):
     portfolio.advance_period()
 
     strategy = FailingStrategy(portfolio)
-    runner = BacktestRunner(portfolio, strategy)
+    runner = BacktestRunner(portfolio, strategy, strict=False)
 
     # Should complete despite error
     with pytest.warns(UserWarning):
@@ -241,3 +241,72 @@ def test_error_during_strategy_execution(asset_universe):
     # Should have recorded the error
     assert len(result.errors) > 0
     assert not result.success
+
+
+def test_strict_mode_raises_on_first_error(asset_universe):
+    """strict=True (default) re-raises the first exception immediately."""
+
+    class AlwaysFailingStrategy(BaseStrategy):
+        def get_trades(self):
+            raise ValueError("Intentional failure")
+
+    portfolio = Portfolio(asset_universe)
+    portfolio.collect_income()
+    portfolio.update_history()
+    portfolio.advance_period()
+
+    strategy = AlwaysFailingStrategy(portfolio)
+    runner = BacktestRunner(portfolio, strategy, strict=True)
+
+    with pytest.raises(ValueError, match="Intentional failure"):
+        runner.run()
+
+
+def test_strict_is_default(asset_universe):
+    """Verify strict=True is the default, not lenient mode."""
+
+    class AlwaysFailingStrategy(BaseStrategy):
+        def get_trades(self):
+            raise ValueError("Intentional failure")
+
+    portfolio = Portfolio(asset_universe)
+    portfolio.collect_income()
+    portfolio.update_history()
+    portfolio.advance_period()
+
+    strategy = AlwaysFailingStrategy(portfolio)
+    runner = BacktestRunner(portfolio, strategy)  # no explicit strict=
+
+    with pytest.raises(ValueError, match="Intentional failure"):
+        runner.run()
+
+
+def test_lenient_mode_history_remains_consistent(asset_universe):
+    """After a lenient-mode error, the failed period still has a history row."""
+
+    class FailOnPeriod2(BaseStrategy):
+        def __init__(self, portfolio):
+            super().__init__(portfolio)
+            self.call_count = 0
+
+        def get_trades(self):
+            self.call_count += 1
+            if self.call_count == 2:
+                raise ValueError("Period 2 failure")
+            return []
+
+    portfolio = Portfolio(asset_universe)
+    portfolio.collect_income()
+    portfolio.update_history()
+    portfolio.advance_period()
+
+    strategy = FailOnPeriod2(portfolio)
+    runner = BacktestRunner(portfolio, strategy, strict=False)
+
+    with pytest.warns(UserWarning):
+        result = runner.run()
+
+    # History should have no NaN rows — the failed period must still be recorded
+    assert not result.portfolio.history.isnull().all(axis=1).any(), (
+        "Failed period left a missing history row"
+    )

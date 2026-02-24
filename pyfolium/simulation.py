@@ -84,6 +84,8 @@ class BacktestRunner:
         start_period: First period to simulate (None = portfolio's first period)
         end_period: Last period to simulate (None = portfolio's last period)
         current_period: Current period being processed (None before run)
+        strict: If True, any period error re-raises immediately. If False,
+            errors are recorded and the backtest continues (lenient mode).
 
     Example:
         Basic usage::
@@ -115,6 +117,7 @@ class BacktestRunner:
         *,
         start_period: pd.Period | None = None,
         end_period: pd.Period | None = None,
+        strict: bool = True,
     ):
         """Initialize the BacktestRunner.
 
@@ -123,6 +126,10 @@ class BacktestRunner:
             strategy: Strategy instance to execute trades
             start_period: Optional start period (default: portfolio's current_period)
             end_period: Optional end period (default: last period in universe)
+            strict: If True (default), any exception during a period immediately
+                re-raises and stops the backtest. If False, errors are recorded
+                and the runner attempts to advance to the next period while still
+                calling update_history() so portfolio state remains consistent.
 
         Raises:
             ValueError: If start_period > end_period
@@ -170,6 +177,7 @@ class BacktestRunner:
         self._errors: list[tuple[pd.Period, Exception]] = []
         self._hooks: dict[str, list[Callable]] = defaultdict(list)
         self._periods_completed = 0
+        self._strict = strict
 
     def register_hook(self, event: str, callback: Callable) -> None:
         """Register a callback for a specific event.
@@ -259,23 +267,41 @@ class BacktestRunner:
             self._errors.append((self.current_period, e))
             self._trigger_hooks("error")
 
-            # Warn but continue
+            if self._strict:
+                raise
+
+            # Lenient mode: warn and attempt graceful state recovery.
+            # We call update_history() instead of forcing _states to DONE so that
+            # the period's actual portfolio state is still recorded in history.
             warnings.warn(
                 f"Error in period {self.current_period}: {e}. "
                 f"Continuing with next period...",
                 stacklevel=2,
             )
 
-            # Try to advance anyway to avoid getting stuck
             try:
-                # Force state to DONE if we're stuck
-                self.portfolio._states[self.current_period] = PortfolioState.DONE
+                current_state = self.portfolio._states[self.current_period]  # type: ignore[call-overload]
+
+                # If collect_income didn't finish, force to TRANSACT so that
+                # update_history() can still run and record actual portfolio state.
+                if current_state == PortfolioState.COLLECT_INCOME:
+                    self.portfolio._states[self.current_period] = (  # type: ignore[call-overload]
+                        PortfolioState.TRANSACT
+                    )
+
+                # update_history() transitions state to DONE and writes the real
+                # portfolio snapshot — this avoids forcing DONE without recording.
+                period_state = self.portfolio._states[self.current_period]  # type: ignore[call-overload]
+                if period_state == PortfolioState.TRANSACT:
+                    self.portfolio.update_history()
+
                 self.portfolio.advance_period()
-            except (StopIteration, RuntimeError):
-                # Can't recover, re-raise
+            except StopIteration:
+                raise  # End of backtest — normal exit
+            except RuntimeError:
                 raise RuntimeError(
                     f"Cannot recover from error in period {self.current_period}. "
-                    f"Portfolio may be in inconsistent state."
+                    f"Portfolio is in an inconsistent state."
                 ) from e
 
     def run(self, *, progress: bool = False) -> BacktestResult:

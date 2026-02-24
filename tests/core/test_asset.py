@@ -129,3 +129,44 @@ def test_asset_precise_income_access(sample_asset):
     assert (
         sample_asset.get_income_at(end_time) == sample_asset.data["dividend"][end_time]
     )
+
+
+def test_asset_does_not_mutate_caller_dataframe(
+    sample_asset_data, sample_asset_universe
+):
+    """Asset.__init__ must not add columns to the caller's DataFrame (P1-2)."""
+    # Make an explicit copy so we can compare against it later
+    original_columns = list(sample_asset_data.columns)
+
+    daily_universe = AssetUniverse(data_frequency="D")
+    Asset(
+        symbol="NOMUT",
+        assetUniverse=daily_universe,
+        data=sample_asset_data,
+        price_column="price",
+        # No income_column — triggers the branch that previously mutated the frame
+    )
+
+    # The caller's DataFrame must be unchanged
+    assert list(sample_asset_data.columns) == original_columns
+    assert "income" not in sample_asset_data.columns
+
+
+def test_asset_with_income_column_does_not_mutate_caller_dataframe(
+    sample_asset_data, sample_asset_universe
+):
+    """Asset.__init__ must not mutate the caller's DataFrame even when an income
+    column is provided and additional column operations are applied internally."""
+    original_columns = list(sample_asset_data.columns)
+    original_values = sample_asset_data.copy(deep=True)
+
+    Asset(
+        symbol="NOMUT2",
+        assetUniverse=sample_asset_universe,
+        data=sample_asset_data,
+        price_column="price",
+        income_column="dividend",
+    )
+
+    assert list(sample_asset_data.columns) == original_columns
+    assert sample_asset_data.equals(original_values)

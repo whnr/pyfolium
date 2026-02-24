@@ -172,40 +172,52 @@ def test_advance_period():
         portfolio.advance_period()
 
 
-def test_update_future_holdings_change_whole_future(portfolio_with_assets_taxes_fees):
+def test_advance_period_carries_forward_holdings(portfolio_with_assets_taxes_fees):
+    """Holdings from the current period are carried forward on advance."""
     portfolio = portfolio_with_assets_taxes_fees
-    symbol_1 = "TEST"
-    symbol_2 = "TEST2"
+    symbol = "TEST"
 
-    # updates all holdings in the future
-    portfolio._update_future_holdings(symbol_1, 1.0)
-    assert portfolio.holdings[symbol_1].all() == 1.0
-    assert portfolio.holdings[symbol_2].all() == 0.0
+    # Buy in period 0
+    portfolio.collect_income()
+    portfolio.cash += 10_000.0
+    portfolio.buy_asset(symbol, 5.0)
+    portfolio.update_history()
+
+    current_holdings = portfolio.holdings.loc[portfolio.current_period, symbol]
+    assert current_holdings == 5.0
+
+    # Advance — period 1 should inherit period 0's holdings
+    portfolio.advance_period()
+    assert portfolio.holdings.loc[portfolio.current_period, symbol] == 5.0
 
 
-def test_update_future_holdings_keep_past_untouched(portfolio_with_assets_taxes_fees):
+def test_buy_sell_only_modifies_current_period(portfolio_with_assets_taxes_fees):
+    """Trades only affect the current period row, not future periods."""
     portfolio = portfolio_with_assets_taxes_fees
-    symbol_1 = "TEST"
+    symbol = "TEST"
 
-    portfolio.current_period = portfolio.history.index[0]
-    portfolio._update_future_holdings(symbol_1, 1.0)
-    portfolio.current_period = portfolio.history.index[1]
-    portfolio._update_future_holdings(symbol_1, 2.0)
-    assert (portfolio.holdings.iloc[1:][symbol_1] == 3.0).all()
-    assert portfolio.holdings.iloc[0][symbol_1] == 1.0
+    # Buy in period 0
+    portfolio.collect_income()
+    portfolio.cash += 10_000.0
+    portfolio.buy_asset(symbol, 5.0)
 
+    # Future periods should still be 0 (not forward-filled)
+    assert portfolio.holdings.iloc[0][symbol] == 5.0
+    assert portfolio.holdings.iloc[1][symbol] == 0.0
 
-def test_update_future_holdings_reduce_holdings(portfolio_with_assets_taxes_fees):
-    portfolio = portfolio_with_assets_taxes_fees
-    symbol_1 = "TEST"
+    portfolio.update_history()
+    portfolio.advance_period()
 
-    portfolio.current_period = portfolio.history.index[0]
-    portfolio._update_future_holdings(symbol_1, 1.0)
-    portfolio.current_period = portfolio.history.index[1]
-    portfolio._update_future_holdings(symbol_1, 2.0)
-    portfolio.current_period = portfolio.history.index[2]
-    portfolio._update_future_holdings(symbol_1, -1.0)
-    assert (portfolio.holdings.iloc[2:][symbol_1] == 2.0).all()
+    # After advance, period 1 is carried forward
+    assert portfolio.holdings.iloc[1][symbol] == 5.0
+
+    # Sell in period 1
+    portfolio.collect_income()
+    portfolio.sell_asset(symbol, 3.0)
+    assert portfolio.holdings.loc[portfolio.current_period, symbol] == 2.0
+
+    # Period 2 still untouched until next advance
+    assert portfolio.holdings.iloc[2][symbol] == 0.0
 
 
 def test_register_transaction(portfolio_with_assets_taxes_fees):

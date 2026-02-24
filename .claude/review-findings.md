@@ -179,11 +179,6 @@ Comment says "Shared reference (immutable)" but AssetUniverse has `add_asset()`.
 **Decision needed:** Either make it actually immutable (freeze after Portfolio init)
 or fix the comment. For production, freezing is safer.
 
-### `camelCase` parameter `assetUniverse`
-**File:** `pyfolium/core.py:107`
-Ruff N803 is suppressed specifically for this. Renaming to `asset_universe` is a breaking
-change to the Asset constructor API. Do it if we're doing a breaking change pass anyway.
-
 ### Strategy `step()` returns nothing
 **File:** `pyfolium/strategy.py:78-81`
 Consider having `step()` return the trades list or a StepResult for introspection.
@@ -380,14 +375,11 @@ clone() docstring in `core.py`.
 
 Recommended sequence:
 
-1. **P1-2** (DataFrame mutation) — Small, isolated, testable
-2. **P1-3** (get_income_at precise) — Small, isolated, testable
 3. **Data gaps** — Asset NaN rejection at init + trade-time graceful failure via success=False
 4. **Strategy start conditions** — `initial_cash` + `start_period` on BaseStrategy, runner sync. High user-impact, changes the primary API surface.
 5. **P2-5** (total_value property) — Small, used by everything downstream
 6. **P2-6** (trade failure warnings) — Small, important for AI strategies
 7. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort
-8. **P0-1** (holdings write path) — Core change, needs careful testing
 9. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
 10. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
 11. **Tax/fee extensibility phase 1** — Extract tax methods from Portfolio into TaxConfig. Depends on P0-3.

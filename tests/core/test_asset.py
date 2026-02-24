@@ -22,7 +22,7 @@ def test_asset_creation_errors(sample_asset_data):
     with raises(ValueError):
         Asset(
             symbol="TEST",
-            assetUniverse=monthly_universe,
+            asset_universe=monthly_universe,
             data=pd.DataFrame({"price": [1, 2, 3]}),
             price_column="price",
         )
@@ -31,7 +31,7 @@ def test_asset_creation_errors(sample_asset_data):
     with raises(ValueError):
         Asset(
             symbol="TEST",
-            assetUniverse=monthly_universe,
+            asset_universe=monthly_universe,
             data=sample_asset_data,
             price_column="price",
             income_column="dividend",
@@ -41,7 +41,7 @@ def test_asset_creation_errors(sample_asset_data):
     with raises(ValueError):
         Asset(
             symbol="TEST",
-            assetUniverse=monthly_universe,
+            asset_universe=monthly_universe,
             data=pd.DataFrame(),
             price_column="price",
         )
@@ -52,7 +52,7 @@ def test_asset_creation_errors(sample_asset_data):
     with raises(ValueError):
         Asset(
             symbol="TEST",
-            assetUniverse=daily_universe,
+            asset_universe=daily_universe,
             data=sample_asset_data,
             price_column="price",
             income_column="foobar",
@@ -72,7 +72,7 @@ def test_asset_index_strict_monotonicity():
     with raises(ValueError, match="is not strictly monotonic"):
         Asset(
             symbol="TEST",
-            assetUniverse=daily_universe,
+            asset_universe=daily_universe,
             data=pd.DataFrame(data, index=i_duplicates),
             price_column="price",
         )
@@ -80,7 +80,7 @@ def test_asset_index_strict_monotonicity():
     with raises(ValueError, match="is not strictly monotonic"):
         Asset(
             symbol="TEST",
-            assetUniverse=daily_universe,
+            asset_universe=daily_universe,
             data=pd.DataFrame(data, index=i_non_monotonic),
             price_column="price",
         )
@@ -147,7 +147,7 @@ def test_asset_does_not_mutate_caller_dataframe(
     daily_universe = AssetUniverse(data_frequency="D")
     Asset(
         symbol="NOMUT",
-        assetUniverse=daily_universe,
+        asset_universe=daily_universe,
         data=sample_asset_data,
         price_column="price",
         # No income_column — triggers the branch that previously mutated the frame
@@ -168,7 +168,7 @@ def test_asset_with_income_column_does_not_mutate_caller_dataframe(
 
     Asset(
         symbol="NOMUT2",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=sample_asset_data,
         price_column="price",
         income_column="dividend",

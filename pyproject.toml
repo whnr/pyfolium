@@ -47,9 +47,6 @@ addopts = [
     "--cov-report=html:coverage/",
 ]
 testpaths = ["tests"]
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-]
 
 # Ruff configuration - replaces black, isort, and flake8
 [tool.ruff]
@@ -68,18 +65,6 @@ select = [
     "C4",    # flake8-comprehensions
     "SIM",   # flake8-simplify
     "PTH",   # flake8-use-pathlib
-]
-ignore = [
-    "E203",  # whitespace before ':', incompatible with black
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = [
-    "N802",  # Allow function names like test_FIFO in tests
-    "N806",  # Allow variable names like taxConfig in tests
-]
-"pyfolium/core.py" = [
-    "N803",  # Allow assetUniverse parameter name (pre-existing convention)
 ]
 
 [tool.ruff.lint.isort]

@@ -85,11 +85,11 @@ class Asset:
 
     Attributes:
         symbol (str): The symbol of the asset.
-        assetUniverse (AssetUniverse): The asset universe that the asset will be
+        asset_universe (AssetUniverse): The asset universe that the asset will be
             added to.
         data (pd.DataFrame): The data must have a period index.
             The frequency of the data must match the data_frequency of the
-            assetUniverse.
+            asset_universe.
         metadata (Dict[str, str], optional): Additional metadata of the asset.
         price_column (str): The name of the column containing the price of the
             asset."""
@@ -97,14 +97,14 @@ class Asset:
     def __init__(
         self,
         symbol: str,
-        assetUniverse: "AssetUniverse",
+        asset_universe: "AssetUniverse",
         data: pd.DataFrame,
         price_column: str = "price",
         income_column: str | None = None,
         metadata: dict[str, str] | None = None,
     ):
         self.symbol = symbol
-        self.assetUniverse = assetUniverse
+        self.asset_universe = asset_universe
         self.data = data.copy()
         self.price_column = price_column
         self.metadata = metadata
@@ -115,10 +115,10 @@ class Asset:
         if not isinstance(self.data.index, pd.PeriodIndex):
             raise ValueError("Data must have a period index")
 
-        if self.data.index.freqstr != self.assetUniverse.data_frequency:
+        if self.data.index.freqstr != self.asset_universe.data_frequency:
             raise ValueError(
                 f"Data frequency of {self.data.index.freqstr} "
-                f"does not match data_frequency of {self.assetUniverse.data_frequency}"
+                f"does not match data_frequency of {self.asset_universe.data_frequency}"
             )
 
         if not self.data.index.is_monotonic_increasing or not self.data.index.is_unique:
@@ -140,7 +140,7 @@ class Asset:
         self.end_time = self.data.index.max()
 
         # Add the asset to the parent asset universe
-        self.assetUniverse.add_asset(self)
+        self.asset_universe.add_asset(self)
 
     @property
     def price(self):
@@ -501,7 +501,7 @@ class Portfolio:
         self._current_period_idx += 1
         self.current_period = self.history.index[self._current_period_idx]
         # Carry forward holdings from the completed period
-        self.holdings.loc[self.current_period] = self.holdings.loc[previous_period]
+        self.holdings.loc[self.current_period] = self.holdings.loc[previous_period]  # type: ignore[call-overload]
 
     def update_history(self) -> None:
         """Update the history of the portfolio for the current period.
@@ -679,7 +679,7 @@ class Portfolio:
             transaction_amount=transaction_amount,
         )
 
-        self.holdings.loc[self.current_period, symbol] += quantity
+        self.holdings.loc[self.current_period, symbol] += quantity  # type: ignore[index]
 
         self.cash += transaction_amount
 
@@ -791,7 +791,7 @@ class Portfolio:
             transaction_amount=transaction_amount,
         )
 
-        self.holdings.loc[self.current_period, symbol] -= quantity
+        self.holdings.loc[self.current_period, symbol] -= quantity  # type: ignore[index]
 
         self.cash += transaction_amount
         self.tax_owed += tax_liability

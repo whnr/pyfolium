@@ -150,7 +150,7 @@ def test_advance_period():
     periods = pd.period_range("2025-01-01", periods=2, freq="D")
     Asset(
         symbol="TEST",
-        assetUniverse=universe,
+        asset_universe=universe,
         data=pd.DataFrame(
             {
                 "price": [1.0, 2.0],
@@ -420,11 +420,11 @@ def test_collect_income(asset_universe_for_income_testing):
 
 
 def test_collect_income_negative_gains(asset_universe_for_income_testing):
-    taxConfig = TaxConfig(
+    tax_config = TaxConfig(
         short_term_rate=0.5,
     )
     portfolio = Portfolio(
-        asset_universe=asset_universe_for_income_testing, tax_config=taxConfig
+        asset_universe=asset_universe_for_income_testing, tax_config=tax_config
     )
 
     portfolio.collect_income()
@@ -965,7 +965,7 @@ def test_sell_asset_negative_capital_gains_no_withholding(
     assert portfolio.history.loc[portfolio.current_period]["taxes_paid_in_period"] == 0
 
 
-def test_sell_asset_tax_lot_handling_FIFO(portfolio_with_assets):
+def test_sell_asset_tax_lot_handling_fifo(portfolio_with_assets):
     portfolio = portfolio_with_assets
     # It should be the default, but you never know
     portfolio.tax_config.tax_strategy = "FIFO"
@@ -998,7 +998,7 @@ def test_sell_asset_tax_lot_handling_FIFO(portfolio_with_assets):
     assert portfolio.transactions.loc[index_buy_2]["lot_quantity_remaining"] == 0.0
 
 
-def test_sell_asset_tax_lot_handling_LIFO(portfolio_with_assets):
+def test_sell_asset_tax_lot_handling_lifo(portfolio_with_assets):
     portfolio = portfolio_with_assets
     portfolio.tax_config.tax_strategy = "LIFO"
 

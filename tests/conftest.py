@@ -33,15 +33,15 @@ def fee_config():
 @pytest.fixture
 def day_date_range():
     """Fixture providing a date range for testing"""
-    periodIndex = pd.period_range("2023-01-01", periods=365 * 2, freq="D")
-    return periodIndex
+    period_index = pd.period_range("2023-01-01", periods=365 * 2, freq="D")
+    return period_index
 
 
 @pytest.fixture
 def month_date_range():
     """Fixture providing a date range for testing"""
-    periodIndex = pd.period_range("2023-01-01", periods=24, freq="M")
-    return periodIndex
+    period_index = pd.period_range("2023-01-01", periods=24, freq="M")
+    return period_index
 
 
 @pytest.fixture
@@ -68,7 +68,7 @@ def sample_asset(sample_asset_data, sample_asset_universe):
     """Fixture providing a sample asset with price and dividend data"""
     return Asset(
         symbol="TEST",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=sample_asset_data,
         metadata={"description": "test asset", "type": "equity"},
         price_column="price",
@@ -81,7 +81,7 @@ def asset_universe_with_assets(sample_asset_universe, sample_asset_data):
     """Fixture providing a sample asset universe with assets"""
     Asset(
         symbol="TEST",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=sample_asset_data,
         metadata={"description": "test asset", "type": "equity"},
         price_column="price",
@@ -89,7 +89,7 @@ def asset_universe_with_assets(sample_asset_universe, sample_asset_data):
     )
     Asset(
         symbol="TEST2",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=sample_asset_data,
         metadata={"description": "test asset 2", "type": "equity"},
         price_column="price",
@@ -131,7 +131,7 @@ def asset_universe_for_income_testing():
 
     Asset(
         symbol="A",
-        assetUniverse=asset_universe,
+        asset_universe=asset_universe,
         data=pd.DataFrame(
             {"price": [10.0, 10.0, 10.0], "income": [1.0, 2.0, 3.0]}, index=periods
         ),
@@ -140,7 +140,7 @@ def asset_universe_for_income_testing():
     )
     Asset(
         symbol="B",
-        assetUniverse=asset_universe,
+        asset_universe=asset_universe,
         data=pd.DataFrame(
             {"price": [20.0, 20.0, 20.0], "income": [-4.0, -5.0, -6.0]}, index=periods
         ),
@@ -158,13 +158,13 @@ def asset_universe_for_sell_asset_testing():
 
     Asset(
         symbol="A",
-        assetUniverse=asset_universe,
+        asset_universe=asset_universe,
         data=pd.DataFrame({"price": [10.0, 12.0, 14.0]}, index=periods),
         price_column="price",
     )
     Asset(
         symbol="B",
-        assetUniverse=asset_universe,
+        asset_universe=asset_universe,
         data=pd.DataFrame({"price": [20.0, 15.0, 10.0]}, index=periods),
         price_column="price",
     )

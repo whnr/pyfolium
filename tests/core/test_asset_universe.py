@@ -9,7 +9,7 @@ def test_asset_universe_empty(sample_asset_universe, sample_asset_data):
 
     Asset(
         symbol="TEST",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=sample_asset_data,
         price_column="price",
         income_column="dividend",
@@ -19,25 +19,25 @@ def test_asset_universe_empty(sample_asset_universe, sample_asset_data):
 
 
 def test_asset_in_universe(sample_asset_data, sample_asset_universe):
-    assetUniverse = sample_asset_universe
+    asset_universe = sample_asset_universe
 
     new_asset = Asset(
         symbol="TEST",
-        assetUniverse=assetUniverse,
+        asset_universe=asset_universe,
         data=sample_asset_data,
         price_column="price",
         income_column="dividend",
     )
 
-    assert len(assetUniverse.assets) == 1
-    assert new_asset in assetUniverse.assets.values()
+    assert len(asset_universe.assets) == 1
+    assert new_asset in asset_universe.assets.values()
 
 
 def test_adding_empty_asset_raises_error(sample_asset_universe):
     with raises(ValueError):
         Asset(
             symbol="TEST",
-            assetUniverse=sample_asset_universe,
+            asset_universe=sample_asset_universe,
             data=pd.DataFrame(),
             price_column="price",
             income_column="dividend",
@@ -50,7 +50,7 @@ def test_adding_asset_with_same_symbol_raises_error(
     with raises(ValueError):
         Asset(
             symbol="TEST",
-            assetUniverse=sample_asset_universe,
+            asset_universe=sample_asset_universe,
             data=sample_asset_data,
             price_column="price",
             income_column="dividend",
@@ -58,7 +58,7 @@ def test_adding_asset_with_same_symbol_raises_error(
 
         Asset(
             symbol="TEST",
-            assetUniverse=sample_asset_universe,
+            asset_universe=sample_asset_universe,
             data=sample_asset_data,
             price_column="price",
             income_column="dividend",
@@ -70,7 +70,7 @@ def test_asset_universe_price_matrix(sample_asset_data, sample_asset_universe):
 
     asset = Asset(
         symbol="TEST",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=sample_asset_data,
         price_column="price",
         income_column="dividend",
@@ -81,7 +81,7 @@ def test_asset_universe_price_matrix(sample_asset_data, sample_asset_universe):
 
     asset2 = Asset(
         symbol="TEST2",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=sample_asset_data,
         price_column="price",
         income_column="dividend",
@@ -96,7 +96,7 @@ def test_asset_universe_price_matrix_different_lengths(
 ):
     Asset(
         symbol="TEST",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=sample_asset_data,
         price_column="price",
         income_column="dividend",
@@ -108,7 +108,7 @@ def test_asset_universe_price_matrix_different_lengths(
 
     Asset(
         symbol="TEST2",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=short_asset_data,
         price_column="price",
         income_column="dividend",
@@ -125,7 +125,7 @@ def test_asset_universe_income_matrix(sample_asset_data, sample_asset_universe):
 
     asset = Asset(
         symbol="TEST",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=sample_asset_data,
         price_column="price",
         income_column="dividend",
@@ -140,7 +140,7 @@ def test_asset_universe_income_matrix(sample_asset_data, sample_asset_universe):
 
     asset2 = Asset(
         symbol="TEST2",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=no_dividend_asset_data,
         price_column="price",
     )
@@ -166,13 +166,13 @@ def test_asset_universe_get_period_index_range(
 
     Asset(
         symbol="old",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=old_asset_data,
         price_column="price",
     )
     Asset(
         symbol="new",
-        assetUniverse=sample_asset_universe,
+        asset_universe=sample_asset_universe,
         data=sample_asset_data,
         price_column="price",
         income_column="dividend",

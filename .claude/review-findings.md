@@ -3,6 +3,8 @@
 *Created: 2026-02-22 | Session: review-architecture-changes-GWIjK*
 *Context: Full codebase review for production readiness — decades of daily data, AI-written strategies*
 
+**After completion items will be deleted and can be recovered from git commit history.**
+
 ## Session Summary
 
 This review examined every source file in pyfolium line-by-line. The codebase was largely
@@ -27,21 +29,6 @@ break at scale and several correctness bugs.
 ---
 
 ## P0 — Performance: Will break at scale
-
-### P0-1: Replace `_update_future_holdings` with single-row write
-**File:** `pyfolium/core.py:432-446`
-**Problem:** Every `buy_asset`/`sell_asset` writes to ALL future rows in the holdings DataFrame.
-With 5,200 periods and 3 trades/day = ~81M row writes total.
-**Fix:**
-- In `buy_asset`/`sell_asset`: replace `_update_future_holdings(symbol, qty)` with
-  `self.holdings.loc[self.current_period, symbol] += qty` (O(1))
-- In `advance_period()`: add `self.holdings.loc[next_period] = self.holdings.loc[self.current_period]`
-  to carry forward (O(assets))
-- Delete `_update_future_holdings` method entirely
-**Strategy interface:** Unchanged. `holdings.loc[current_period]` returns same values.
-Past periods return same history. Only change: future periods show 0 instead of forward-filled.
-**Test impact:** Tests that check holdings at future periods may need updating.
-Search for `holdings.loc[` in tests to find affected assertions.
 
 ### P0-2: Replace transaction `pd.concat` with pre-allocated buffer
 **File:** `pyfolium/core.py:492-496`
@@ -77,26 +64,6 @@ The US allows selective lot selling; FIFO/LIFO are just defaults.
 ---
 
 ## P1 — Correctness bugs
-
-### P1-2: Asset constructor mutates caller's DataFrame
-**File:** `pyfolium/core.py:144`
-**Problem:** When no income column provided, `self.data[self.income_column] = 0` modifies
-the input DataFrame in-place, adding an "income" column the caller never asked for.
-**Fix:** Add `self.data = data.copy()` early in `__init__`, before any mutations.
-**Test:** Create a DataFrame, pass to Asset, verify original DataFrame unchanged.
-
-### P1-4: Error recovery in BacktestRunner silently corrupts state
-**File:** `pyfolium/simulation.py:277-286`
-**Problem:** On error, runner forces state to DONE and continues. Income may not have been
-collected, holdings not updated, history incomplete. Silent corruption is worse than crashing.
-**Fix options:**
-1. **Strict mode (default):** Raise on first error, stop backtest
-2. **Lenient mode (opt-in):** Log warning with full context, mark period as failed in results,
-   skip to next period without corrupting state
-3. Never force `_states` to DONE — that's lying about what happened
-**Decision needed:** Discuss which behavior is right for AI-generated strategies.
-Strict is safer; lenient is useful during strategy development.
-**Design doc update:** Depends on logging architecture — error handling feeds into observability model.
 
 ### P1-5: Add `sell_lot()` method for specific lot identification
 **File:** `pyfolium/core.py` (new method on Portfolio)

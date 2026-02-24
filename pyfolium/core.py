@@ -127,6 +127,13 @@ class Asset:
                 "is not strictly monotonic"
             )
 
+        if self.data[self.price_column].isna().any():
+            raise ValueError(
+                f"Price column '{self.price_column}' of asset '{self.symbol}' "
+                "contains NaN values. Provide clean price data for all declared "
+                "periods."
+            )
+
         if income_column:
             if income_column not in self.data.columns:
                 raise ValueError(f"Column {income_column} not in data")
@@ -523,7 +530,7 @@ class Portfolio:
             self.transactions["period"] == self.current_period
         ]
 
-        self.history.loc[self.current_period] = {  # type: ignore
+        self.history.loc[self.current_period] = {
             "cash": self.cash,
             "tax_owed": self.tax_owed,
             "long_term_gains_in_period": period_transactions["long_term_gains"].sum(),
@@ -531,7 +538,7 @@ class Portfolio:
             "taxes_paid_in_period": period_transactions["tax_paid"].sum(),
         }
 
-        self._states[self.current_period] = PortfolioState.DONE
+        self._states[self.current_period] = PortfolioState.DONE  # type: ignore[call-overload]
 
     def collect_income(self):
         """Collect all the income for the current period.
@@ -552,15 +559,18 @@ class Portfolio:
         """
         self._check_state(PortfolioState.COLLECT_INCOME)
 
+        income_this_period = (
+            self.asset_universe.income_matrix.loc[self.current_period].fillna(0)  # type: ignore[call-overload]
+        )
         symbols = (
             self.holdings.loc[self.current_period]  # type: ignore[call-overload]
-            * self.asset_universe.income_matrix.loc[self.current_period]  # type: ignore[call-overload]
+            * income_this_period
         )
         symbols = self.holdings.columns[symbols != 0]
 
         for symbol in symbols:
-            # get the income
-            income = self.asset_universe.income_matrix.loc[self.current_period, symbol]  # type: ignore
+            # get the income — NaN means no data for this period, treat as zero
+            income = income_this_period[symbol]
 
             # filter transactions to this symbol only buy
             tax_lots = self.transactions[
@@ -612,7 +622,7 @@ class Portfolio:
             self.tax_owed += tax_liability
             self.cash += transaction_amount
 
-        self._states[self.current_period] = PortfolioState.TRANSACT
+        self._states[self.current_period] = PortfolioState.TRANSACT  # type: ignore[call-overload]
 
     def move_cash(self, amount: float):
         """Move cash in or out of the portfolio.
@@ -664,6 +674,10 @@ class Portfolio:
             raise ValueError("Quantity must be positive")
 
         price = self.asset_universe.assets[symbol].get_price_at(self.current_period)
+        if pd.isna(price):
+            raise ValueError(
+                f"Cannot buy {symbol} at {self.current_period}: price is NaN"
+            )
         fee = self.fee_config.calculate_fee(quantity * price)
         cost_basis_per_share = price + fee / quantity
         transaction_amount = -(quantity * price + fee)
@@ -679,7 +693,7 @@ class Portfolio:
             transaction_amount=transaction_amount,
         )
 
-        self.holdings.loc[self.current_period, symbol] += quantity  # type: ignore[index]
+        self.holdings.loc[self.current_period, symbol] += quantity  # type: ignore[index, operator]
 
         self.cash += transaction_amount
 
@@ -724,6 +738,10 @@ class Portfolio:
             )
         quantity_to_sell = quantity
         price = self.asset_universe.assets[symbol].get_price_at(self.current_period)
+        if pd.isna(price):
+            raise ValueError(
+                f"Cannot sell {symbol} at {self.current_period}: price is NaN"
+            )
         fee = self.fee_config.calculate_fee(quantity * price)
         cost_basis_per_share = price - fee / quantity
 
@@ -791,7 +809,7 @@ class Portfolio:
             transaction_amount=transaction_amount,
         )
 
-        self.holdings.loc[self.current_period, symbol] -= quantity  # type: ignore[index]
+        self.holdings.loc[self.current_period, symbol] -= quantity  # type: ignore[index, operator]
 
         self.cash += transaction_amount
         self.tax_owed += tax_liability

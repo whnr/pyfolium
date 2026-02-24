@@ -18,7 +18,7 @@ The project name is a German pun: "Hätte hätte Fahrradkette" (roughly translat
 - Activate environment manually: `source .venv/bin/activate`
 - Python version: 3.12+
 
-**Note:** After running `setup-dev`, pre-commit hooks will automatically run ruff on every commit.
+**Note:** After running `setup-dev`, pre-commit hooks will automatically run ruff and mypy on every commit. Use `uv run pre-commit run --all-files` rather than `uv run mypy pyfolium/` directly — pre-commit uses its own isolated environment with pinned package versions that matches CI, preventing version drift between local checks and CI.
 
 ### Testing
 - Run all tests: `uv run pytest`
@@ -62,9 +62,10 @@ This state machine is enforced via `PortfolioState` enum to prevent operations i
 
 **Asset** (`pyfolium/core.py`): Individual financial instrument
 - Requires DataFrame with PeriodIndex at specified frequency
-- Must have a price column; income column optional (defaults to 0)
+- Must have a price column with no NaN values; income column optional (defaults to 0)
 - Self-registers with parent AssetUniverse on initialization
 - Validates index is monotonic and matches universe frequency
+- Rejects NaN prices at construction (data quality gate)
 
 **Portfolio** (`pyfolium/core.py`): The core backtesting engine
 - Tracks `cash`, `tax_owed`, `holdings` (positions over time)
@@ -146,6 +147,7 @@ strategies/         # User-defined strategies (empty, for users to populate)
 ## Current State
 
 Recent features:
+- **Data gaps handling**: Asset rejects NaN prices at construction; trades on out-of-range periods fail gracefully via `success=False` in `trades_df`; NaN income treated as zero
 - **BacktestRunner**: Automated simulation with hooks and progress reporting (370 LOC)
 - **Portfolio.clone()**: Deep copy for strategy comparison and optimization
 - **Pydantic validation**: TaxConfig and FeeConfig with automatic validation

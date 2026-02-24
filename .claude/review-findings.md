@@ -1,6 +1,7 @@
 # Architecture Review Findings & Action Plan
 
 *Created: 2026-02-22 | Session: review-architecture-changes-GWIjK*
+*Updated: 2026-02-24 | Data gaps handling implemented (Asset NaN rejection, graceful trade failure, zero income on NaN, pre-commit mypy fixes)*
 *Context: Full codebase review for production readiness — decades of daily data, AI-written strategies*
 
 **After completion items will be deleted and can be recovered from git commit history.**
@@ -270,38 +271,6 @@ what severity to assign to recovered vs fatal errors.
 Move computation outside the `for symbol in symbols` loop.
 Minor optimization but easy fix.
 
-### Data gaps: validate at init, graceful at trade time
-**Files:** `pyfolium/core.py` (Asset.__init__, Portfolio.buy_asset, Portfolio.sell_asset, Portfolio.collect_income),
-`pyfolium/strategy.py` (BaseStrategy.execute_trades)
-**Problem:** No validation against NaN values in price data. Two distinct failure modes:
-1. Asset created with NaN prices within its own declared date range — data corruption that
-   passes all current checks silently.
-2. Strategy trades an asset at a period outside its data range — price_matrix returns NaN
-   after universe alignment via `reindex()`. Trade silently produces NaN cash flows.
-
-**Fix (two layers, different philosophies):**
-1. **Asset.__init__ (data quality gate):** Reject price series containing NaN:
-   `if self.data[self.price_column].isna().any(): raise ValueError(...)`
-   Users must provide clean data for the periods they declare. Gaps from weekends, holidays,
-   or different asset date ranges are handled by the universe alignment — not by allowing
-   NaN in the source data.
-
-2. **Portfolio.buy_asset / sell_asset (graceful failure):** Guard price lookup:
-   `price = ...; if pd.isna(price): raise ValueError(f"Cannot trade {symbol} at {period}: price is NaN")`
-   This ValueError is already caught by `BaseStrategy.execute_trades()`, which records
-   the trade with `success=False` in `trades_df`. The strategy continues executing.
-   **Also:** `execute_trades` currently only catches `ValueError`. Add `KeyError` to the
-   except clause — a price lookup on a period outside the asset's range may raise KeyError
-   instead of returning NaN depending on the access path.
-
-3. **Portfolio.collect_income:** Treat NaN income as zero income (nothing to collect where
-   there is no data). Not an error — just skip silently.
-
-**Test:** Create asset with NaN gap, verify Asset rejects it at construction. Create universe
-where asset A starts later than asset B, attempt buy on A before its start date, verify trade
-returns `success=False` in `trades_df` rather than crashing.
-**Design doc update:** `DESIGN.md` "Data Integrity" section — already updated.
-
 ### Tax/fee config extensibility (template pattern)
 **Files:** `pyfolium/core.py` (TaxConfig, FeeConfig, Portfolio.sell_asset, Portfolio.collect_income)
 **Problem:** TaxConfig is purely declarative — rates and a strategy name string. All tax
@@ -375,7 +344,6 @@ clone() docstring in `core.py`.
 
 Recommended sequence:
 
-3. **Data gaps** — Asset NaN rejection at init + trade-time graceful failure via success=False
 4. **Strategy start conditions** — `initial_cash` + `start_period` on BaseStrategy, runner sync. High user-impact, changes the primary API surface.
 5. **P2-5** (total_value property) — Small, used by everything downstream
 6. **P2-6** (trade failure warnings) — Small, important for AI strategies

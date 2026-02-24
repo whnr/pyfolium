@@ -1,6 +1,5 @@
 from copy import deepcopy
 from enum import Enum
-from math import isnan
 
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
@@ -156,42 +155,6 @@ class Asset:
     @property
     def income(self):
         return self.data[self.income_column]
-
-    def get_price_at(self, period: pd.Period, precise: bool = True) -> float:
-        """
-        Get the price of the asset at the given period
-
-        Args:
-            period (pd.Period): The period to get the price for
-            precise (bool, optional): Whether to get the price
-                for the exact period or the asof value
-
-        Returns:
-            float: The price of the asset at the given period
-        """
-        # if it's before the start date raise an key error
-        if period < self.start_time:
-            raise KeyError("Data not available before the start date")
-
-        if not precise:
-            # Return the last available price before the period
-            return float(self.price.asof(period))
-
-        return float(self.price[period])
-
-    def get_income_at(self, period: pd.Period) -> float:
-        """
-        Get the income of the asset at the given period
-
-        Args:
-            period (pd.Period): The period to get the price for
-
-        Returns:
-            float: The income of the asset at the given period.
-                Will return `0.0` if there was `nan` income.
-        """
-        value = float(self.income[period])
-        return 0.0 if isnan(value) else value
 
 
 class AssetUniverse:
@@ -673,11 +636,15 @@ class Portfolio:
         if quantity <= 0:
             raise ValueError("Quantity must be positive")
 
-        price = self.asset_universe.assets[symbol].get_price_at(self.current_period)
-        if pd.isna(price):
+        raw_price = self.asset_universe.price_matrix.loc[
+            self.current_period, symbol  # type: ignore[index]
+        ]
+        if pd.isna(raw_price):
             raise ValueError(
-                f"Cannot buy {symbol} at {self.current_period}: price is NaN"
+                f"Cannot buy {symbol} at {self.current_period}: "
+                "no price data for this period"
             )
+        price = float(raw_price)  # type: ignore[arg-type]
         fee = self.fee_config.calculate_fee(quantity * price)
         cost_basis_per_share = price + fee / quantity
         transaction_amount = -(quantity * price + fee)
@@ -737,11 +704,15 @@ class Portfolio:
                 f"{current_holding_quantity} for symbol {symbol}."
             )
         quantity_to_sell = quantity
-        price = self.asset_universe.assets[symbol].get_price_at(self.current_period)
-        if pd.isna(price):
+        raw_price = self.asset_universe.price_matrix.loc[
+            self.current_period, symbol  # type: ignore[index]
+        ]
+        if pd.isna(raw_price):
             raise ValueError(
-                f"Cannot sell {symbol} at {self.current_period}: price is NaN"
+                f"Cannot sell {symbol} at {self.current_period}: "
+                "no price data for this period"
             )
+        price = float(raw_price)  # type: ignore[arg-type]
         fee = self.fee_config.calculate_fee(quantity * price)
         cost_basis_per_share = price - fee / quantity
 
@@ -753,16 +724,16 @@ class Portfolio:
             - self.tax_config.long_term_holding_period
         ).to_period(self.asset_universe.data_frequency)
 
-        # sell tax lots until we run out of qunatity_to_sell
+        # sell tax lots until we run out of quantity_to_sell
         for lot in tax_lots.index:
             # get the basic transaction info
-            lot_quantity_remaining = self.transactions.loc[
-                lot, "lot_quantity_remaining"
-            ]
-            transaction_period = self.transactions.loc[lot, "period"]
-            lot_cost_basis_per_share = self.transactions.loc[
-                lot, "cost_basis_per_share"
-            ]
+            lot_quantity_remaining = float(
+                self.transactions.loc[lot, "lot_quantity_remaining"]
+            )
+            transaction_period: pd.Period = self.transactions.loc[lot, "period"]
+            lot_cost_basis_per_share = float(
+                self.transactions.loc[lot, "cost_basis_per_share"]
+            )
 
             lot_quantity_sold = min(quantity_to_sell, lot_quantity_remaining)
             lot_gains = lot_quantity_sold * (

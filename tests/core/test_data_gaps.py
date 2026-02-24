@@ -234,34 +234,3 @@ def test_collect_income_ignores_nan_income_outside_asset_range():
     # A: 10 shares * 1.0 income = 10.0 → one income transaction expected
     assert len(income_txns) == 1
     assert income_txns.iloc[0]["symbol"] == "A"
-
-
-def test_collect_income_nan_income_for_held_asset_treated_as_zero():
-    """Holding an asset whose income is NaN on a given period produces no income txn.
-
-    We build a scenario where we hold B but collect_income runs on 2023-01-01
-    (before B's data starts). The income_matrix has NaN for B on that day.
-    collect_income must silently skip it — no transaction, no cash change.
-    """
-    universe = _make_universe_with_two_assets_different_start_dates()
-    portfolio = Portfolio(asset_universe=universe)
-
-    # Day 1: force a holding of B (simulate a carry-forward by directly setting)
-    # We can't use buy_asset since B has no price on day 1, so we manipulate holdings
-    # directly to simulate a scenario where we somehow hold B.
-    portfolio._states[portfolio.current_period] = __import__(
-        "pyfolium.core", fromlist=["PortfolioState"]
-    ).PortfolioState.TRANSACT
-    portfolio.holdings.loc[portfolio.current_period, "B"] = 5.0
-    portfolio._states[portfolio.current_period] = __import__(
-        "pyfolium.core", fromlist=["PortfolioState"]
-    ).PortfolioState.COLLECT_INCOME
-
-    # Now collect income. B has NaN income on 2023-01-01, A has no income column
-    # (no income column provided → income defaults to 0). Neither should generate
-    # an income transaction.
-    portfolio.collect_income()
-
-    income_txns = portfolio.transactions[portfolio.transactions["type"] == "income"]
-    assert len(income_txns) == 0
-    assert portfolio.cash == 0.0

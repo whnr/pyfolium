@@ -60,12 +60,13 @@ This state machine is enforced via `PortfolioState` enum to prevent operations i
 - All assets must have matching `data_frequency` (e.g., 'D' for daily, 'M' for monthly)
 - Automatically updates matrices when assets are added
 
-**Asset** (`pyfolium/core.py`): Individual financial instrument
+**Asset** (`pyfolium/core.py`): Validated data container for a financial instrument
 - Requires DataFrame with PeriodIndex at specified frequency
 - Must have a price column with no NaN values; income column optional (defaults to 0)
 - Self-registers with parent AssetUniverse on initialization
 - Validates index is monotonic and matches universe frequency
 - Rejects NaN prices at construction (data quality gate)
+- Runtime price/income queries go through `universe.price_matrix`/`income_matrix`, not Asset methods
 
 **Portfolio** (`pyfolium/core.py`): The core backtesting engine
 - Tracks `cash`, `tax_owed`, `holdings` (positions over time)

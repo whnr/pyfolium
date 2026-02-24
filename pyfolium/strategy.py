@@ -71,7 +71,7 @@ class BaseStrategy(ABC):
                 elif quantity < 0:
                     self.portfolio.sell_asset(symbol, abs(quantity))
                     self._record_trade(symbol, quantity, quantity)
-            except (ValueError, KeyError):
+            except ValueError:
                 self._record_trade(symbol, quantity, 0, success=False)
                 continue
 

@@ -421,22 +421,6 @@ class Portfolio:
                 f"Expected state: {expected_state.value}"
             )
 
-    def _update_future_holdings(self, symbol: str, quantity: float) -> None:
-        """
-        Update the future holdings of a symbol in the portfolio.
-
-        Args:
-            symbol (str): The symbol of the asset to update the holdings for.
-            quantity (float): The quantity of the asset to add to the holdings.
-                Sign indicates the direction of the transaction.
-
-        Notes:
-            This function is used to update the holdings of an asset in the future,
-            elegantly enabling fewer updates to be made in the future.
-        """
-        mask = self.holdings.index >= self.current_period
-        self.holdings.loc[mask, symbol] += quantity
-
     def _register_transaction(self, **kwargs) -> None:
         """Register a transaction in the portfolio.
 
@@ -501,8 +485,11 @@ class Portfolio:
             raise RuntimeError("Last period was not in the DONE state.")
         if self._current_period_idx + 1 >= len(self.history.index):
             raise StopIteration("End of history reached")
+        previous_period = self.current_period
         self._current_period_idx += 1
         self.current_period = self.history.index[self._current_period_idx]
+        # Carry forward holdings from the completed period
+        self.holdings.loc[self.current_period] = self.holdings.loc[previous_period]
 
     def update_history(self) -> None:
         """Update the history of the portfolio for the current period.
@@ -680,7 +667,7 @@ class Portfolio:
             transaction_amount=transaction_amount,
         )
 
-        self._update_future_holdings(symbol, quantity)
+        self.holdings.loc[self.current_period, symbol] += quantity
 
         self.cash += transaction_amount
 
@@ -792,8 +779,7 @@ class Portfolio:
             transaction_amount=transaction_amount,
         )
 
-        # important: quantity_to_sell is negative
-        self._update_future_holdings(symbol, -quantity)
+        self.holdings.loc[self.current_period, symbol] -= quantity
 
         self.cash += transaction_amount
         self.tax_owed += tax_liability

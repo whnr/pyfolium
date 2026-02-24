@@ -85,19 +85,6 @@ the input DataFrame in-place, adding an "income" column the caller never asked f
 **Fix:** Add `self.data = data.copy()` early in `__init__`, before any mutations.
 **Test:** Create a DataFrame, pass to Asset, verify original DataFrame unchanged.
 
-### P1-3: `get_income_at` ignores `precise` parameter
-**File:** `pyfolium/core.py:182-183`
-**Problem:** Method accepts `precise` kwarg but always does exact lookup.
-`get_price_at` properly handles `precise=False` with `asof()`.
-**Fix:** Mirror `get_price_at` logic:
-```python
-def get_income_at(self, period, precise=True):
-    if precise:
-        return float(self.income[period])
-    return float(self.income.asof(period))
-```
-**Test:** Add test with period between known income dates.
-
 ### P1-4: Error recovery in BacktestRunner silently corrupts state
 **File:** `pyfolium/simulation.py:277-286`
 **Problem:** On error, runner forces state to DONE and continues. Income may not have been

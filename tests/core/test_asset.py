@@ -1,4 +1,5 @@
 from datetime import timedelta
+from math import isnan
 
 import pandas as pd
 from pytest import raises
@@ -87,13 +88,22 @@ def test_asset_index_strict_monotonicity():
 
 def test_asset_accessors(sample_asset):
     end_time = sample_asset.end_time
+    start_time = sample_asset.start_time
     assert (sample_asset.price == sample_asset.data["price"]).all()
-    assert (sample_asset.income == sample_asset.data["dividend"]).all()
+    assert sample_asset.income.equals(sample_asset.data["dividend"])
 
     # get the values at a specific time.
     assert sample_asset.get_price_at(end_time) == sample_asset.data["price"][end_time]
+
+    start_income = sample_asset.data["dividend"][start_time]
     assert (
-        sample_asset.get_income_at(end_time) == sample_asset.data["dividend"][end_time]
+        sample_asset.get_income_at(start_time) == 0.0
+        if isnan(start_income)
+        else start_income
+    )
+    end_income = sample_asset.data["dividend"][end_time]
+    assert (
+        sample_asset.get_income_at(end_time) == 0.0 if isnan(end_income) else end_income
     )
 
 
@@ -116,19 +126,15 @@ def test_asset_precise_price_access(sample_asset):
     )
 
 
-def test_asset_precise_income_access(sample_asset):
+def test_asset_income_precise_access(sample_asset):
     end_time = sample_asset.end_time
     start_time = sample_asset.start_time
 
-    # retrieving any value without a label raises an error
+    # retrieving any value without a label returns 0
     with raises(KeyError):
         sample_asset.get_income_at(end_time + timedelta(days=1))
     with raises(KeyError):
         sample_asset.get_income_at(start_time - timedelta(days=1))
-
-    assert (
-        sample_asset.get_income_at(end_time) == sample_asset.data["dividend"][end_time]
-    )
 
 
 def test_asset_does_not_mutate_caller_dataframe(

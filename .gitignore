@@ -7,12 +7,14 @@ coverage/
 
 # uv
 .venv
-.python-version
 
 # Ruff cache
 .ruff_cache/
 
-# Mypy cache
+# Pyright cache
+.pyright/
+
+# Type checker caches
 .mypy_cache/
 
 # Sphinx documentation

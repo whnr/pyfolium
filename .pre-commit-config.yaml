@@ -13,18 +13,16 @@ repos:
       # Run the formatter
       - id: ruff-format
 
-  # Mypy - Static type checker
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.2
+  # Pyright - Static type checker (uses project venv via uv run)
+  - repo: local
     hooks:
-      - id: mypy
-        additional_dependencies:
-          - pandas-stubs
-          - types-pytz
-          - types-tqdm
-          - pydantic
-        args: [--config-file=pyproject.toml]
-        files: ^pyfolium/
+      - id: pyright
+        name: pyright
+        entry: uv run pyright
+        language: system
+        types: [python]
+        pass_filenames: false
+        args: [pyfolium/]
 
   # Standard pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks

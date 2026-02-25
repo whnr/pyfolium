@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pandas>=2.0.0",
-    "pyarrow>=18.0.0",
     "pydantic>=2.0.0",
     "tqdm>=4.0.0",
 ]
@@ -26,9 +25,6 @@ dev = [
     "pandas-stubs>=2.0.0",
     "pyright>=1.1.0",
     "types-tqdm>=4.67.0.20250809",
-    "deepdiff>=6.0.0",
-    "sphinx>=7.0.0",
-    "sphinx-autodoc-typehints>=1.25.0",
     "ruff>=0.8.0",
     "pre-commit>=3.0.0",
 ]
@@ -84,8 +80,14 @@ line-ending = "auto"
 typeCheckingMode = "standard"
 venvPath = "."
 venv = ".venv"
-# deepdiff ships no stubs; suppress the resulting import errors
-reportMissingModuleSource = "none"
+# pandas-stubs omits pd.Period from the Scalar union type, causing false
+# positives on every PeriodIndex .loc[] access and arithmetic on their results.
+# Demoted to warning so they remain visible but non-blocking until
+# pandas-stubs resolves https://github.com/pandas-dev/pandas-stubs/issues/
+reportArgumentType = "warning"
+reportCallIssue = "warning"
+reportOperatorIssue = "warning"
+reportAttributeAccessIssue = "warning"
 
 # Coverage configuration
 [tool.coverage.run]

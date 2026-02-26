@@ -14,15 +14,6 @@ coverage/
 # Pyright cache
 .pyright/
 
-# Type checker caches
-.mypy_cache/
-
-# Sphinx documentation
-docs/_build/
-docs/_static/
-docs/_templates/
-
 # IDEs
 .vscode/
 .idea/
-PR_DESCRIPTION.txt

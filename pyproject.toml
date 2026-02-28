@@ -31,12 +31,8 @@ dev = [
 
 # Pytest configuration
 [tool.pytest.ini_options]
-pythonpath = "."
 addopts = [
-    "--cov=pyfolium.core",
-    "--cov=pyfolium.strategy",
-    "--cov=pyfolium.simulation",
-    "--cov=pyfolium.data",
+    "--cov=pyfolium",
     "--cov-branch",
     "--cov-report=xml:coverage/coverage.xml",
     "--cov-report=html:coverage/",

@@ -189,7 +189,7 @@ uv run ruff format .
 uv run ruff check --fix .
 
 # Type check
-uv run mypy pyfolium/
+uv run pyright pyfolium/
 
 # Run all pre-commit checks manually
 uv run pre-commit run --all-files

@@ -285,7 +285,7 @@ class BacktestRunner:
                 # If collect_income didn't finish, force to TRANSACT so that
                 # update_history() can still run and record actual portfolio state.
                 if current_state == PortfolioState.COLLECT_INCOME:
-                    self.portfolio._states[self.current_period] = (
+                    self.portfolio._states[self.current_period] = (  # type: ignore[call-overload]
                         PortfolioState.TRANSACT
                     )
 

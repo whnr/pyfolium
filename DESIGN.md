@@ -189,13 +189,15 @@ When the AssetUniverse aligns assets with different date ranges via `reindex()`,
 
 If a strategy attempts a trade at a period where the price is NaN, the trade **fails gracefully** rather than crashing the backtest:
 
-- `buy_asset()` / `sell_asset()` detect the NaN price and raise a `ValueError`.
-- BaseStrategy's `execute_trades()` catches this and records the trade with `success=False` in `trades_df`.
+- `buy_asset()` / `sell_asset()` look up the price via `universe.price_matrix.loc[period, symbol]`. For out-of-range periods this returns NaN.
+- The NaN guard raises `ValueError`, which `execute_trades()` catches and records as `success=False` in `trades_df`.
 - The strategy continues executing. It can handle the failure by:
-  1. Checking data availability *before* placing a trade.
+  1. Checking data availability *before* placing a trade (e.g., `pd.isna(universe.price_matrix.loc[period, symbol])`).
   2. Inspecting `trades_df` for failed trades after the period.
 
 This means a strategy that blindly trades every period won't crash — it will accumulate `success=False` entries that the user can inspect. A strategy that checks prices first will never encounter the failure at all.
+
+Note: the Asset class is a validated data container that feeds the universe at construction time. At runtime, all price and income queries go through `universe.price_matrix` and `universe.income_matrix` — not through individual Asset methods. This ensures a single, consistent data access path with predictable NaN behavior for out-of-range periods.
 
 ### Income gaps
 
@@ -207,7 +209,7 @@ Strategies are subclasses of `BaseStrategy` with one required method: `get_trade
 
 The design is deliberately minimal:
 
-- **No market data API** — the strategy accesses `self.portfolio` and its `asset_universe` directly. You have all the data; decide what to do with it.
+- **No market data API** — the strategy accesses prices and income via `self.asset_universe.price_matrix` and `self.asset_universe.income_matrix`. These are aligned DataFrames indexed by period and symbol. You have all the data; decide what to do with it.
 - **No order types** — trades execute at the current period's price. Limit orders, stop losses, and slippage models are out of scope (they belong in a more complex execution simulation).
 - **No position sizing helpers** — compute your own quantities. This avoids baking in assumptions about how sizing should work.
 

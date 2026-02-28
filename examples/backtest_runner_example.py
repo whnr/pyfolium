@@ -124,7 +124,6 @@ def example_simple():
     universe = create_sample_universe()
     portfolio = Portfolio(universe)
 
-    # Strategy declares its own start capital — no manual boilerplate needed
     strategy = BuyAndHoldStrategy(portfolio, symbol="STOCK_A", quantity=100, initial_cash=50000)
 
     # Run backtest - that's it!
@@ -254,7 +253,6 @@ def example_compare_strategies():
 
     universe = create_sample_universe()
 
-    # Create base portfolio (no cash boilerplate — strategies carry their own capital)
     base_portfolio = Portfolio(universe)
 
     # Each strategy declares its own initial capital and gets an independent clone

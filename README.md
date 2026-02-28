@@ -102,7 +102,6 @@ for _ in range(10):
 Clone portfolios to compare strategies:
 
 ```python
-# Each strategy carries its own initial capital — no manual seeding required
 base = Portfolio(universe)
 
 clone1 = base.clone()

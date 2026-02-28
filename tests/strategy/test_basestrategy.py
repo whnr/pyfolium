@@ -118,7 +118,7 @@ def test_step_executes_trades(strategy, mocker):
 
 
 # ---------------------------------------------------------------------------
-# Tests for new start condition attributes
+# Start condition attributes
 # ---------------------------------------------------------------------------
 
 

@@ -254,9 +254,12 @@ class BacktestRunner:
             # Execute the standard period cycle
             self.portfolio.collect_income()
 
-            # Inject initial cash once, on the very first active period.
-            # Flag is cleared before the call so a raise in move_cash() cannot
-            # cause a retry on the next period in lenient mode.
+            # Inject initial cash exactly once, on the first active period.
+            # The flag is cleared before calling move_cash() to guard against
+            # double-injection when strict=False. In that mode (lenient),
+            # exceptions during a period are caught and execution continues to
+            # the next period. If the flag were still set when move_cash()
+            # raised, the next period would attempt a second injection.
             if self._pending_initial_cash is not None:
                 cash_to_inject = self._pending_initial_cash
                 self._pending_initial_cash = None

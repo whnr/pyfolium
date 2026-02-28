@@ -81,6 +81,8 @@ This state machine is enforced via `PortfolioState` enum to prevent operations i
 - `step()` method gets trades and executes them via portfolio
 - Tracks all trade attempts (successful and failed) in `trades_df`
 - Parameters stored in `parameters` dict for reproducibility
+- `initial_cash`: optional cash deposited via `move_cash()` at the first active period (keyword-only, `None` by default)
+- `start_period`: optional first period for this strategy; `BacktestRunner` resolves it with precedence: explicit runner arg > `strategy.start_period` > `portfolio.current_period` (keyword-only, `None` by default)
 
 **BacktestRunner** (`pyfolium/simulation.py`): Automated simulation orchestration
 - Automates the period-by-period execution loop
@@ -149,8 +151,9 @@ strategies/         # User-defined strategies (empty, for users to populate)
 ## Current State
 
 Recent features:
+- **Strategy start conditions**: `BaseStrategy.__init__` accepts `initial_cash: float | None` and `start_period: pd.Period | None` as keyword-only params. `BacktestRunner` injects cash via `move_cash()` on the first active period (after `collect_income()`, before `strategy.step()`); resolves `start_period` with precedence: explicit runner arg > `strategy.start_period` > `portfolio.current_period`. Eliminates the 4-line portfolio seeding boilerplate from all user code.
 - **Data gaps handling**: Asset rejects NaN prices at construction; trades on out-of-range periods fail gracefully via `success=False` in `trades_df`; NaN income treated as zero
-- **BacktestRunner**: Automated simulation with hooks and progress reporting (370 LOC)
+- **BacktestRunner**: Automated simulation with hooks and progress reporting
 - **Portfolio.clone()**: Deep copy for strategy comparison and optimization
 - **Pydantic validation**: TaxConfig and FeeConfig with automatic validation
 - **Data loading**: load_from_csv and load_from_dataframe utilities

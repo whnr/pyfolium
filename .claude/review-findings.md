@@ -296,48 +296,17 @@ Users should be able to subclass or replace them for their jurisdiction.
 **Depends on:** P0-3 (tax lot data structure) for the lot selection interface.
 **Design doc:** See `DESIGN.md` "Configs as templates" section.
 
-### Strategy owns start conditions (initial cash + start period)
-**Files:** `pyfolium/strategy.py` (BaseStrategy), `pyfolium/simulation.py` (BacktestRunner)
-**Problem:** Every user must write 4 lines of boilerplate to seed initial cash:
-```python
-portfolio.collect_income()   # no-op, just satisfies state machine
-portfolio.move_cash(50000)
-portfolio.update_history()
-portfolio.advance_period()
-```
-This ceremony appears in the README, every example, and the clone() docstring. It's the
-first thing every new user encounters, and it's confusing.
+### ~~Strategy owns start conditions (initial cash + start period)~~ ✓ DONE
+**Implemented in:** commit on branch `claude/add-strategy-start-conditions-yUnRc`
 
-**Design principle:** Execution logic — including when to start investing and how much capital
-to deploy — belongs to the **strategy**, not to manual user ceremony. Cash must still be a
-transaction (it appears in the transaction log at the correct period).
+`BaseStrategy.__init__` now accepts `initial_cash: float | None = None` and
+`start_period: pd.Period | None = None` as keyword-only parameters. `BacktestRunner` uses
+three-way resolution for `start_period` (explicit runner arg > strategy.start_period >
+portfolio.current_period) and injects `initial_cash` via `move_cash()` on the first period,
+after `collect_income()` (TRANSACT state), before `strategy.step()`.
 
-**Fix:**
-1. **BaseStrategy.__init__** gains `initial_cash: float | None = None` and
-   `start_period: pd.Period | None = None` parameters, stored alongside existing `parameters`.
-2. **BacktestRunner** reads `strategy.initial_cash` and `strategy.start_period`:
-   - If `start_period` is set, runner fast-forwards to that period.
-   - Fast-forward for empty portfolios (no holdings, no cash) should be a true index skip —
-     just advance `_current_period_idx` without running collect_income/update_history for
-     each intermediate period. No state to preserve means no ceremony needed.
-   - On the first strategy period, runner deposits `initial_cash` via `move_cash()` before
-     calling `strategy.step()`.
-3. **Result:** The README example becomes:
-   ```python
-   portfolio = Portfolio(universe)
-   strategy = BuyAndHold(portfolio, initial_cash=50000)
-   result = BacktestRunner(portfolio, strategy).run()
-   ```
-
-**Warmup data use case:** A strategy needing 200 days of moving-average history sets
-`start_period` to day 201. The runner fast-forwards there (no ceremony for empty periods),
-deposits cash, and begins. The strategy has access to the full AssetUniverse price history
-for lookback calculations.
-
-**Depends on:** Nothing — can be implemented independently.
-**Also updates:** README example, all examples in `examples/backtest_runner_example.py`,
-clone() docstring in `core.py`.
-**Design doc update:** `DESIGN.md` "Strategy owns its start conditions" section — already updated.
+All examples updated to drop the 4-line boilerplate. 13 new tests added (5 in
+`test_basestrategy.py`, 8 in `test_backtest_runner.py`).
 
 ---
 
@@ -345,7 +314,7 @@ clone() docstring in `core.py`.
 
 Recommended sequence:
 
-4. **Strategy start conditions** — `initial_cash` + `start_period` on BaseStrategy, runner sync. High user-impact, changes the primary API surface.
+4. ~~**Strategy start conditions**~~ ✓ **DONE** — `initial_cash` + `start_period` on BaseStrategy, runner sync.
 5. **P2-5** (total_value property) — Small, used by everything downstream
 6. **P2-6** (trade failure warnings) — Small, important for AI strategies
 7. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort

@@ -140,7 +140,14 @@ class BacktestRunner:
 
         # Determine period range
         universe_periods = portfolio.asset_universe.get_period_index_range()
-        self.start_period = start_period or portfolio.current_period
+        # Resolve start_period: explicit runner arg > strategy.start_period > current
+        if start_period is not None:
+            resolved_start = start_period
+        elif strategy.start_period is not None:
+            resolved_start = strategy.start_period
+        else:
+            resolved_start = portfolio.current_period
+        self.start_period = resolved_start
         self.end_period = end_period or universe_periods[-1]
 
         # Validate period range
@@ -171,6 +178,9 @@ class BacktestRunner:
                 raise ValueError(
                     f"Cannot advance to start_period {self.start_period}"
                 ) from e
+
+        # Pending initial cash injection — consumed on the first run_period() call
+        self._pending_initial_cash: float | None = strategy.initial_cash
 
         # State tracking
         self.current_period: pd.Period | None = None
@@ -243,6 +253,15 @@ class BacktestRunner:
         try:
             # Execute the standard period cycle
             self.portfolio.collect_income()
+
+            # Inject initial cash once, on the very first active period.
+            # Flag is cleared before the call so a raise in move_cash() cannot
+            # cause a retry on the next period in lenient mode.
+            if self._pending_initial_cash is not None:
+                cash_to_inject = self._pending_initial_cash
+                self._pending_initial_cash = None
+                self.portfolio.move_cash(cash_to_inject)
+
             self.strategy.step()
             self.portfolio.update_history()
 

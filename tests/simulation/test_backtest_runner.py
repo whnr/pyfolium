@@ -11,7 +11,25 @@ from pyfolium.strategy import BaseStrategy
 class DoNothingStrategy(BaseStrategy):
     """Strategy that does nothing - just holds."""
 
+    def __init__(self, portfolio, **kwargs):
+        super().__init__(portfolio, **kwargs)
+
     def get_trades(self) -> list[tuple[str, float]]:
+        return []
+
+
+class CashCheckingStrategy(BaseStrategy):
+    """Records portfolio cash at the moment get_trades() is first called."""
+
+    def __init__(self, portfolio, **kwargs):
+        super().__init__(portfolio, **kwargs)
+        self.first_period_cash: float | None = None
+        self._first_call = True
+
+    def get_trades(self) -> list[tuple[str, float]]:
+        if self._first_call:
+            self.first_period_cash = self.portfolio.cash
+            self._first_call = False
         return []
 
 
@@ -310,3 +328,125 @@ def test_lenient_mode_history_remains_consistent(asset_universe):
     assert not result.portfolio.history.isnull().all(axis=1).any(), (
         "Failed period left a missing history row"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tests for start_period precedence
+# ---------------------------------------------------------------------------
+
+
+def test_runner_uses_strategy_start_period_when_runner_has_none(asset_universe):
+    """When runner has no start_period, strategy.start_period is used."""
+    portfolio = Portfolio(asset_universe)
+    periods = asset_universe.get_period_index_range()
+    target_start = periods[3]
+
+    strategy = DoNothingStrategy(portfolio, start_period=target_start)
+    runner = BacktestRunner(portfolio, strategy)
+
+    assert runner.start_period == target_start
+
+
+def test_runner_explicit_start_period_overrides_strategy(asset_universe):
+    """Explicit runner start_period takes precedence over strategy.start_period."""
+    portfolio = Portfolio(asset_universe)
+    periods = asset_universe.get_period_index_range()
+
+    strategy = DoNothingStrategy(portfolio, start_period=periods[3])
+    runner = BacktestRunner(portfolio, strategy, start_period=periods[5])
+
+    assert runner.start_period == periods[5]
+
+
+def test_runner_falls_back_to_current_period_when_both_none(asset_universe):
+    """When both runner and strategy start_period are None, portfolio.current_period is used."""
+    portfolio = Portfolio(asset_universe)
+    expected = portfolio.current_period
+
+    runner = BacktestRunner(portfolio, DoNothingStrategy(portfolio))
+
+    assert runner.start_period == expected
+
+
+# ---------------------------------------------------------------------------
+# Tests for initial_cash injection
+# ---------------------------------------------------------------------------
+
+
+def test_initial_cash_available_when_get_trades_runs(asset_universe):
+    """initial_cash is injected before strategy.get_trades() on the first period."""
+    portfolio = Portfolio(asset_universe)
+    strategy = CashCheckingStrategy(portfolio, initial_cash=75000.0)
+
+    BacktestRunner(portfolio, strategy).run()
+
+    assert strategy.first_period_cash == pytest.approx(75000.0)
+
+
+def test_initial_cash_injected_only_once(asset_universe):
+    """initial_cash deposit appears exactly once in portfolio.transactions."""
+    portfolio = Portfolio(asset_universe)
+    strategy = DoNothingStrategy(portfolio, initial_cash=10000.0)
+
+    BacktestRunner(portfolio, strategy).run()
+
+    deposits = portfolio.transactions[portfolio.transactions["type"] == "deposit"]
+    assert len(deposits) == 1
+    assert float(deposits.iloc[0]["transaction_amount"]) == pytest.approx(10000.0)
+
+
+def test_no_deposit_when_initial_cash_is_none(asset_universe):
+    """When initial_cash is None (default), no deposit transaction is created."""
+    portfolio = Portfolio(asset_universe)
+
+    BacktestRunner(portfolio, DoNothingStrategy(portfolio)).run()
+
+    deposits = portfolio.transactions[portfolio.transactions["type"] == "deposit"]
+    assert len(deposits) == 0
+
+
+def test_initial_cash_works_in_step_by_step_mode(asset_universe):
+    """initial_cash is injected correctly when run_period() is used directly."""
+    portfolio = Portfolio(asset_universe)
+    strategy = CashCheckingStrategy(portfolio, initial_cash=25000.0)
+
+    runner = BacktestRunner(portfolio, strategy)
+    try:
+        runner.run_period()
+    except StopIteration:
+        pass
+
+    assert strategy.first_period_cash == pytest.approx(25000.0)
+
+
+def test_initial_cash_not_reinjected_on_second_run_period(asset_universe):
+    """initial_cash is not injected again on the second manual run_period() call."""
+    portfolio = Portfolio(asset_universe)
+    runner = BacktestRunner(portfolio, DoNothingStrategy(portfolio, initial_cash=5000.0))
+
+    for _ in range(2):
+        try:
+            runner.run_period()
+        except StopIteration:
+            break
+
+    deposits = portfolio.transactions[portfolio.transactions["type"] == "deposit"]
+    assert len(deposits) == 1
+
+
+def test_initial_cash_combined_with_strategy_start_period(asset_universe):
+    """initial_cash is injected at the resolved start_period, not at period 0."""
+    portfolio = Portfolio(asset_universe)
+    periods = asset_universe.get_period_index_range()
+    start = periods[3]
+
+    strategy = CashCheckingStrategy(portfolio, initial_cash=42000.0, start_period=start)
+    runner = BacktestRunner(portfolio, strategy)
+
+    assert runner.start_period == start
+
+    runner.run()
+
+    assert strategy.first_period_cash == pytest.approx(42000.0)
+    deposits = portfolio.transactions[portfolio.transactions["type"] == "deposit"]
+    assert len(deposits) == 1

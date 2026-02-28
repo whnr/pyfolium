@@ -10,6 +10,13 @@ class SimpleStrategy(BaseStrategy):
         return [("AAPL", 100)]
 
 
+class ConfiguredStrategy(BaseStrategy):
+    """Strategy used for testing initial_cash and start_period storage."""
+
+    def get_trades(self) -> list[tuple[str, float]]:
+        return []
+
+
 @pytest.fixture
 def asset_universe():
     universe = AssetUniverse(data_frequency="D")
@@ -108,3 +115,45 @@ def test_step_executes_trades(strategy, mocker):
     mock_execute = mocker.patch.object(strategy, "execute_trades")
     strategy.step()
     mock_execute.assert_called_once_with([("AAPL", 100)])
+
+
+# ---------------------------------------------------------------------------
+# Tests for new start condition attributes
+# ---------------------------------------------------------------------------
+
+
+def test_strategy_default_initial_cash_is_none(portfolio):
+    """initial_cash defaults to None when not provided."""
+    assert SimpleStrategy(portfolio).initial_cash is None
+
+
+def test_strategy_default_start_period_is_none(portfolio):
+    """start_period defaults to None when not provided."""
+    assert SimpleStrategy(portfolio).start_period is None
+
+
+def test_strategy_stores_initial_cash(portfolio):
+    """initial_cash is stored as provided."""
+    strategy = ConfiguredStrategy(portfolio, initial_cash=50000.0)
+    assert strategy.initial_cash == 50000.0
+
+
+def test_strategy_stores_start_period(portfolio, asset_universe):
+    """start_period is stored as provided."""
+    period = pd.Period("2020-01-05", freq="D")
+    strategy = ConfiguredStrategy(portfolio, start_period=period)
+    assert strategy.start_period == period
+
+
+def test_strategy_parameters_unaffected_by_new_params(portfolio):
+    """Providing initial_cash and start_period does not affect parameters dict."""
+    period = pd.Period("2020-01-03", freq="D")
+    strategy = ConfiguredStrategy(
+        portfolio,
+        parameters={"alpha": 0.5},
+        initial_cash=10000.0,
+        start_period=period,
+    )
+    assert strategy.parameters == {"alpha": 0.5}
+    assert strategy.initial_cash == 10000.0
+    assert strategy.start_period == period

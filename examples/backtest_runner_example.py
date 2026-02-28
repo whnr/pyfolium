@@ -57,8 +57,8 @@ def create_sample_universe():
 class BuyAndHoldStrategy(BaseStrategy):
     """Simple buy-and-hold strategy that invests on day 1."""
 
-    def __init__(self, portfolio, symbol="STOCK_A", quantity=100):
-        super().__init__(portfolio, parameters={"symbol": symbol, "quantity": quantity})
+    def __init__(self, portfolio, symbol="STOCK_A", quantity=100, **kwargs):
+        super().__init__(portfolio, parameters={"symbol": symbol, "quantity": quantity}, **kwargs)
         self.symbol = symbol
         self.quantity = quantity
         self.invested = False
@@ -73,10 +73,10 @@ class BuyAndHoldStrategy(BaseStrategy):
 class MonthlyRebalanceStrategy(BaseStrategy):
     """Rebalance to target allocations every 20 trading days."""
 
-    def __init__(self, portfolio, target_allocations=None):
+    def __init__(self, portfolio, target_allocations=None, **kwargs):
         target_allocations = target_allocations or {"STOCK_A": 0.5, "STOCK_B": 0.5}
         super().__init__(
-            portfolio, parameters={"target_allocations": target_allocations}
+            portfolio, parameters={"target_allocations": target_allocations}, **kwargs
         )
         self.target_allocations = target_allocations
         self.days_since_rebalance = 0
@@ -124,14 +124,8 @@ def example_simple():
     universe = create_sample_universe()
     portfolio = Portfolio(universe)
 
-    # Initialize with cash
-    portfolio.collect_income()
-    portfolio.move_cash(50000)
-    portfolio.update_history()
-    portfolio.advance_period()
-
-    # Create strategy
-    strategy = BuyAndHoldStrategy(portfolio, symbol="STOCK_A", quantity=100)
+    # Strategy declares its own start capital — no manual boilerplate needed
+    strategy = BuyAndHoldStrategy(portfolio, symbol="STOCK_A", quantity=100, initial_cash=50000)
 
     # Run backtest - that's it!
     runner = BacktestRunner(portfolio, strategy)
@@ -163,12 +157,7 @@ def example_with_progress():
     universe = create_sample_universe()
     portfolio = Portfolio(universe)
 
-    portfolio.collect_income()
-    portfolio.move_cash(100000)
-    portfolio.update_history()
-    portfolio.advance_period()
-
-    strategy = MonthlyRebalanceStrategy(portfolio)
+    strategy = MonthlyRebalanceStrategy(portfolio, initial_cash=100000)
 
     runner = BacktestRunner(portfolio, strategy)
     result = runner.run(progress=True)  # Shows progress bar!
@@ -194,12 +183,7 @@ def example_with_hooks():
     universe = create_sample_universe()
     portfolio = Portfolio(universe)
 
-    portfolio.collect_income()
-    portfolio.move_cash(50000)
-    portfolio.update_history()
-    portfolio.advance_period()
-
-    strategy = BuyAndHoldStrategy(portfolio, symbol="STOCK_B", quantity=200)
+    strategy = BuyAndHoldStrategy(portfolio, symbol="STOCK_B", quantity=200, initial_cash=50000)
 
     # Define custom hooks
     def log_period_start(runner):
@@ -241,12 +225,7 @@ def example_step_by_step():
     universe = create_sample_universe()
     portfolio = Portfolio(universe)
 
-    portfolio.collect_income()
-    portfolio.move_cash(50000)
-    portfolio.update_history()
-    portfolio.advance_period()
-
-    strategy = BuyAndHoldStrategy(portfolio)
+    strategy = BuyAndHoldStrategy(portfolio, initial_cash=50000)
 
     runner = BacktestRunner(portfolio, strategy)
 
@@ -275,26 +254,20 @@ def example_compare_strategies():
 
     universe = create_sample_universe()
 
-    # Create base portfolio
+    # Create base portfolio (no cash boilerplate — strategies carry their own capital)
     base_portfolio = Portfolio(universe)
-    base_portfolio.collect_income()
-    base_portfolio.move_cash(100000)
-    base_portfolio.update_history()
-    base_portfolio.advance_period()
 
-    # Strategy 1: Buy and hold STOCK_A
+    # Each strategy declares its own initial capital and gets an independent clone
     portfolio1 = base_portfolio.clone()
-    strategy1 = BuyAndHoldStrategy(portfolio1, symbol="STOCK_A", quantity=200)
+    strategy1 = BuyAndHoldStrategy(portfolio1, symbol="STOCK_A", quantity=200, initial_cash=100000)
     result1 = BacktestRunner(portfolio1, strategy1).run()
 
-    # Strategy 2: Buy and hold STOCK_B
     portfolio2 = base_portfolio.clone()
-    strategy2 = BuyAndHoldStrategy(portfolio2, symbol="STOCK_B", quantity=400)
+    strategy2 = BuyAndHoldStrategy(portfolio2, symbol="STOCK_B", quantity=400, initial_cash=100000)
     result2 = BacktestRunner(portfolio2, strategy2).run()
 
-    # Strategy 3: Balanced rebalancing
     portfolio3 = base_portfolio.clone()
-    strategy3 = MonthlyRebalanceStrategy(portfolio3)
+    strategy3 = MonthlyRebalanceStrategy(portfolio3, initial_cash=100000)
     result3 = BacktestRunner(portfolio3, strategy3).run()
 
     # Compare results (calculate total portfolio value including holdings)
@@ -332,19 +305,14 @@ def example_custom_period_range():
     universe = create_sample_universe()
     portfolio = Portfolio(universe)
 
-    portfolio.collect_income()
-    portfolio.move_cash(50000)
-    portfolio.update_history()
-    portfolio.advance_period()
-
-    strategy = BuyAndHoldStrategy(portfolio)
-
-    # Run only for first 100 periods
+    # Strategy declares start period (e.g. after warmup window) and initial cash
     periods = universe.get_period_index_range()
+    strategy = BuyAndHoldStrategy(portfolio, initial_cash=50000, start_period=periods[1])
+
+    # Runner only needs end_period; start_period comes from the strategy
     runner = BacktestRunner(
         portfolio,
         strategy,
-        start_period=periods[1],  # Start from second period
         end_period=periods[100],  # End at 100th period
     )
     result = runner.run()
@@ -367,12 +335,7 @@ def example_context_manager():
     universe = create_sample_universe()
     portfolio = Portfolio(universe)
 
-    portfolio.collect_income()
-    portfolio.move_cash(50000)
-    portfolio.update_history()
-    portfolio.advance_period()
-
-    strategy = BuyAndHoldStrategy(portfolio)
+    strategy = BuyAndHoldStrategy(portfolio, initial_cash=50000)
 
     # Use context manager for automatic cleanup
     with BacktestRunner(portfolio, strategy) as runner:

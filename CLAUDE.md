@@ -18,7 +18,7 @@ The project name is a German pun: "Hätte hätte Fahrradkette" (roughly translat
 - Activate environment manually: `source .venv/bin/activate`
 - Python version: 3.12+
 
-**Note:** After running `setup-dev`, pre-commit hooks will automatically run ruff and mypy on every commit. Use `uv run pre-commit run --all-files` rather than `uv run mypy pyfolium/` directly — pre-commit uses its own isolated environment with pinned package versions that matches CI, preventing version drift between local checks and CI.
+**Note:** After running `setup-dev`, pre-commit hooks will automatically run ruff and pyright on every commit. Use `uv run pre-commit run --all-files` to run all hooks locally.
 
 ### Testing
 - Run all tests: `uv run pytest`
@@ -31,11 +31,12 @@ The project name is a German pun: "Hätte hätte Fahrradkette" (roughly translat
 - Format and fix: `uv run ruff format .` (replaces black)
 - Lint and fix: `uv run ruff check --fix .` (replaces flake8 and isort)
 - Lint only: `uv run ruff check .`
-- Type checking: `uv run mypy pyfolium/`
+- Type checking: `uv run pyright pyfolium/`
 - Run all checks: `uv run pre-commit run --all-files`
 
 All code quality tools configured in `pyproject.toml`:
 - **Ruff**: Extremely fast linter and formatter (replaces black, isort, flake8)
+- **Pyright**: Static type checker in `standard` mode; pandas-stubs false-positives on `Period`/`Scalar` demoted to warnings (non-blocking) in `[tool.pyright]`
 - Line length: 88 characters
 - Import sorting: isort-compatible, with pyfolium as first-party
 - Linting rules: pycodestyle, pyflakes, pep8-naming, pyupgrade, flake8-bugbear, and more

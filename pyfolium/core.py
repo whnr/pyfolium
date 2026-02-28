@@ -1,5 +1,6 @@
 from copy import deepcopy
 from enum import Enum
+from typing import cast
 
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
@@ -730,7 +731,7 @@ class Portfolio:
             lot_quantity_remaining = float(
                 self.transactions.loc[lot, "lot_quantity_remaining"]
             )
-            transaction_period: pd.Period = self.transactions.loc[lot, "period"]
+            transaction_period = cast(pd.Period, self.transactions.loc[lot, "period"])
             lot_cost_basis_per_share = float(
                 self.transactions.loc[lot, "cost_basis_per_share"]
             )

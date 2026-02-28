@@ -47,22 +47,20 @@ data = pd.DataFrame({
 
 Asset('AAPL', universe, data)
 
-# 3. Create portfolio and seed cash
-portfolio = Portfolio(universe)
-portfolio.collect_income()
-portfolio.move_cash(50000)
-portfolio.update_history()
-portfolio.advance_period()
-
-# 4. Define strategy
+# 3. Define strategy — initial_cash seeds the portfolio on the first period
 class BuyAndHold(BaseStrategy):
+    def __init__(self, portfolio):
+        super().__init__(portfolio, initial_cash=50000)
+        self.invested = False
+
     def get_trades(self):
-        if not hasattr(self, 'invested'):
+        if not self.invested and self.portfolio.cash >= 10000:
             self.invested = True
             return [('AAPL', 100)]
         return []
 
-# 5. Run backtest
+# 4. Create portfolio and run backtest — no manual cash seeding required
+portfolio = Portfolio(universe)
 runner = BacktestRunner(portfolio, BuyAndHold(portfolio))
 result = runner.run(progress=True)
 
@@ -104,17 +102,13 @@ for _ in range(10):
 Clone portfolios to compare strategies:
 
 ```python
+# Each strategy carries its own initial capital — no manual seeding required
 base = Portfolio(universe)
-base.collect_income()
-base.move_cash(100000)
-base.update_history()
-base.advance_period()
 
-# Clone creates independent copies — bind each strategy to its own clone
 clone1 = base.clone()
 clone2 = base.clone()
-result1 = BacktestRunner(clone1, Strategy1(clone1)).run()
-result2 = BacktestRunner(clone2, Strategy2(clone2)).run()
+result1 = BacktestRunner(clone1, Strategy1(clone1, initial_cash=100000)).run()
+result2 = BacktestRunner(clone2, Strategy2(clone2, initial_cash=100000)).run()
 
 print(f"Strategy 1: ${result1.portfolio.cash:,.2f}")
 print(f"Strategy 2: ${result2.portfolio.cash:,.2f}")
@@ -126,14 +120,20 @@ Subclass `BaseStrategy` and implement `get_trades()`:
 
 ```python
 class MomentumStrategy(BaseStrategy):
-    def __init__(self, portfolio, lookback=20):
-        super().__init__(portfolio, parameters={'lookback': lookback})
+    def __init__(self, portfolio, lookback=20, **kwargs):
+        super().__init__(portfolio, parameters={'lookback': lookback}, **kwargs)
         self.lookback = lookback
 
     def get_trades(self):
         # Return list of (symbol, quantity) tuples
         # Positive quantity = buy, negative = sell
         return [('AAPL', 10), ('GOOGL', -5)]
+
+# initial_cash and start_period are keyword-only params on BaseStrategy
+strategy = MomentumStrategy(portfolio, lookback=30, initial_cash=50000)
+
+# start_period lets a strategy self-describe its warmup requirement
+strategy = MomentumStrategy(portfolio, initial_cash=50000, start_period=dates[30])
 ```
 
 ## Tax and Fee Configuration

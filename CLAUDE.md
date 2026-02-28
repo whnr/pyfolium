@@ -27,6 +27,8 @@ The project name is a German pun: "Hätte hätte Fahrradkette" (roughly translat
 - Tests include automatic coverage reporting to `coverage/` directory
 - Coverage targets: `pyfolium.core`, `pyfolium.strategy`, `pyfolium.simulation`, `pyfolium.data`
 
+**Development style: test-driven.** Write or update tests before (or alongside) implementation. Every new feature or bug fix must have a corresponding test. All 129 tests must pass before committing. The test suite is the contract — if it passes, the implementation is correct.
+
 ### Code Quality
 - Format and fix: `uv run ruff format .` (replaces black)
 - Lint and fix: `uv run ruff check --fix .` (replaces flake8 and isort)
@@ -118,6 +120,16 @@ The test suite uses extensive pytest fixtures (see `tests/conftest.py`):
 - Asset fixtures for income and sell testing with specific price/income patterns
 
 Tests use `deepdiff` for DataFrame comparisons and `pytest-mock` for mocking.
+
+## Documentation Freshness
+
+**README.md, DESIGN.md, and CLAUDE.md must be kept in sync with the code.** After any feature implementation or API change, update all three before committing:
+
+- **README.md** — user-facing: quick start, usage examples, API surface
+- **DESIGN.md** — architectural rationale, design decisions, modeling philosophy
+- **CLAUDE.md** — this file; development workflow, architecture summary, current state
+
+If a change affects examples, update `examples/backtest_runner_example.py` too.
 
 ## Code Style
 

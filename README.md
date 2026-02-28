@@ -214,6 +214,8 @@ examples/           # Usage examples
 
 ## Architecture
 
+For the full design rationale — modeling philosophy, data flow, tax system design, and architectural decisions — see [DESIGN.md](DESIGN.md).
+
 ### Period State Machine
 Each period follows strict sequencing:
 ```

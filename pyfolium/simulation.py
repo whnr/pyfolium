@@ -206,16 +206,6 @@ class BacktestRunner:
             f"strategy={strategy_name} | {status})"
         )
 
-    def __enter__(self):
-        """Context manager entry."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        # No cleanup needed for now, but placeholder for future
-        # (e.g., closing database connections, flushing logs, etc.)
-        return False  # Don't suppress exceptions
-
     def register_hook(self, event: str, callback: Callable) -> None:
         """Register a callback for a specific event.
 

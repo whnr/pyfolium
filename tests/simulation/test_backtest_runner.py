@@ -144,14 +144,6 @@ def test_invalid_hook_event_raises_error(portfolio, strategy):
         runner.register_hook("invalid_event", lambda r: None)
 
 
-def test_context_manager(portfolio, strategy):
-    """Test using runner as context manager."""
-    with BacktestRunner(portfolio, strategy) as runner:
-        result = runner.run()
-
-    assert isinstance(result, BacktestResult)
-
-
 def test_invalid_period_range_raises_error(asset_universe):
     """Test that invalid period ranges raise ValueError."""
     portfolio = Portfolio(asset_universe)

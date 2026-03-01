@@ -4,6 +4,7 @@ This example demonstrates both simple and advanced usage patterns of the
 BacktestRunner class for automating portfolio simulations.
 """
 
+import numpy as np
 import pandas as pd
 
 from pyfolium import Asset, AssetUniverse, BacktestRunner, BaseStrategy, Portfolio
@@ -33,7 +34,6 @@ def create_sample_universe():
     Asset("STOCK_A", universe, stock_a_data)
 
     # Stock B: Volatile stock, no dividends
-    import numpy as np
 
     np.random.seed(42)
     cumulative_returns = np.cumsum(np.random.randn(252) * 0.02)
@@ -311,30 +311,6 @@ def example_custom_period_range():
 
 
 # =============================================================================
-# Example 7: Context Manager
-# =============================================================================
-
-
-def example_context_manager():
-    """Use BacktestRunner as a context manager."""
-    print("\n" + "=" * 70)
-    print("Example 7: Context Manager Pattern")
-    print("=" * 70)
-
-    universe = create_sample_universe()
-    portfolio = Portfolio(universe)
-
-    strategy = BuyAndHoldStrategy(portfolio, initial_cash=50000)
-
-    # Use context manager for automatic cleanup
-    with BacktestRunner(portfolio, strategy) as runner:
-        result = runner.run()
-
-    print(f"\nBacktest completed: {result.success}")
-    print(f"Final cash: ${result.portfolio.cash:,.2f}")
-
-
-# =============================================================================
 # Run all examples
 # =============================================================================
 
@@ -345,7 +321,6 @@ if __name__ == "__main__":
     example_step_by_step()
     example_compare_strategies()
     example_custom_period_range()
-    example_context_manager()
 
     print("\n" + "=" * 70)
     print("All examples completed!")

@@ -260,13 +260,22 @@ class AssetUniverse:
     def price_matrix_ffill(self) -> pd.DataFrame:
         """Forward-filled price matrix, computed lazily on first access.
 
+        Fills intra-life gaps (e.g. market holidays) forward using the most
+        recent prior valid price. Does NOT fill past each asset's end_time —
+        those periods remain NaN, because the asset no longer exists there.
+        The result is cached and recomputed only when new assets are added.
+
         Returns:
-            DataFrame with the same shape as price_matrix, where each NaN
-            is filled with the most recent prior valid price for that asset.
-            The result is cached and recomputed only when new assets are added.
+            DataFrame with the same shape as price_matrix where intra-life
+            NaN values are replaced by the most recent prior valid price, and
+            post-termination periods (after each asset's end_time) are NaN.
         """
         if self._price_matrix_ffill is None:
-            self._price_matrix_ffill = self.price_matrix.ffill()
+            filled = self.price_matrix.ffill()
+            for symbol, asset in self.assets.items():
+                mask = filled.index > asset.end_time
+                filled.loc[mask, symbol] = float("nan")
+            self._price_matrix_ffill = filled
         return self._price_matrix_ffill
 
     @property

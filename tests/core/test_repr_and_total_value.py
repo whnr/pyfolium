@@ -34,6 +34,34 @@ def simple_universe():
 
 
 @pytest.fixture
+def universe_with_short_asset():
+    """Universe where asset A spans all 10 periods and asset B only spans 5.
+
+    Used to test that price_matrix_ffill does NOT fill B past its end_time.
+    """
+    universe = AssetUniverse(data_frequency="D")
+    long_periods = pd.period_range("2023-01-01", periods=10, freq="D")
+    short_periods = pd.period_range("2023-01-01", periods=5, freq="D")
+    Asset(
+        symbol="A",
+        asset_universe=universe,
+        data=pd.DataFrame(
+            {"price": [float(i) for i in range(10, 20)]}, index=long_periods
+        ),
+        price_column="price",
+    )
+    Asset(
+        symbol="B",
+        asset_universe=universe,
+        data=pd.DataFrame(
+            {"price": [float(i) for i in range(20, 25)]}, index=short_periods
+        ),
+        price_column="price",
+    )
+    return universe
+
+
+@pytest.fixture
 def universe_with_gap():
     """Universe where asset B has NaN prices on days 2-3 (simulates a gap)."""
     universe = AssetUniverse(data_frequency="D")
@@ -230,6 +258,29 @@ class TestPriceMatrixFfill:
         first = simple_universe.price_matrix_ffill
         second = simple_universe.price_matrix_ffill
         assert first is second
+
+    def test_does_not_fill_past_end_time(self, universe_with_short_asset):
+        """Periods past an asset's end_time must remain NaN even in the ffill matrix."""
+        ffill = universe_with_short_asset.price_matrix_ffill
+        days = pd.period_range("2023-01-01", periods=10, freq="D")
+        # B has data for days 1-5; days 6-10 must not be filled forward
+        for i in range(5, 10):
+            assert math.isnan(ffill.loc[days[i], "B"]), (
+                f"Expected NaN for B on day {i + 1} (past end_time) but got "
+                f"{ffill.loc[days[i], 'B']}"
+            )
+
+    def test_intra_life_gaps_still_fill_with_short_asset(
+        self, universe_with_short_asset
+    ):
+        """Intra-life values for the long asset should still be present."""
+        ffill = universe_with_short_asset.price_matrix_ffill
+        days = pd.period_range("2023-01-01", periods=10, freq="D")
+        # A spans all 10 days; none should be NaN
+        assert not ffill["A"].isna().any()
+        # B spans days 1-5; those should have valid prices
+        for i in range(5):
+            assert not math.isnan(ffill.loc[days[i], "B"])
 
     def test_cache_invalidated_on_add_asset(self, simple_universe):
         # Access once to populate cache

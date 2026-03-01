@@ -2,7 +2,7 @@
 
 *Created: 2026-02-22 | Session: review-architecture-changes-GWIjK*
 *Updated: 2026-02-24 | Data gaps handling implemented + refactored per PR review (universe matrices as sole runtime data interface, removed get_price_at/get_income_at)*
-*Updated: 2026-02-28 | Rebased onto development; mypy → pyright (cast() for reportAssignmentType, warnings demoted in pyproject.toml for remaining pandas-stubs false-positives)*
+*Updated: 2026-02-28 | Rebased onto dev; mypy → pyright (cast() for reportAssignmentType, warnings demoted in pyproject.toml for remaining pandas-stubs false-positives)*
 *Context: Full codebase review for production readiness — decades of daily data, AI-written strategies*
 
 **After completion items will be deleted and can be recovered from git commit history.**

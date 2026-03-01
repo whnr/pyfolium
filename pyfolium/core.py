@@ -496,9 +496,7 @@ class Portfolio:
         if active.empty:
             holdings_str = "none"
         else:
-            holdings_str = ", ".join(
-                f"{sym}:{qty:g}" for sym, qty in active.items()
-            )
+            holdings_str = ", ".join(f"{sym}:{qty:g}" for sym, qty in active.items())
         try:
             tv = self.get_total_value()
             total_str = f"total≈${tv:,.2f}"

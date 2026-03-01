@@ -269,10 +269,13 @@ def example_compare_strategies():
     strategy3 = MonthlyRebalanceStrategy(portfolio3, initial_cash=100000)
     result3 = BacktestRunner(portfolio3, strategy3).run()
 
+    v1 = result1.portfolio.total_value
+    v2 = result2.portfolio.total_value
+    v3 = result3.portfolio.total_value
     print("\nStrategy Comparison:")
-    print(f"  Strategy 1 (STOCK_A only): Total value = ${result1.portfolio.total_value:,.2f}")
-    print(f"  Strategy 2 (STOCK_B only): Total value = ${result2.portfolio.total_value:,.2f}")
-    print(f"  Strategy 3 (Rebalancing):  Total value = ${result3.portfolio.total_value:,.2f}")
+    print(f"  Strategy 1 (STOCK_A only): Total value = ${v1:,.2f}")
+    print(f"  Strategy 2 (STOCK_B only): Total value = ${v2:,.2f}")
+    print(f"  Strategy 3 (Rebalancing):  Total value = ${v3:,.2f}")
 
 
 # =============================================================================

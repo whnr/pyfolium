@@ -46,17 +46,17 @@ class BacktestResult:
     execution_time: float
     errors: list[tuple[pd.Period, Exception]] = field(default_factory=list)
 
-    @property
-    def success(self) -> bool:
-        """Returns True if backtest completed without errors."""
-        return len(self.errors) == 0
-
     def __repr__(self) -> str:
         error_str = f", {len(self.errors)} errors" if self.errors else ""
         return (
             f"BacktestResult({self.start_period} to {self.end_period}, "
             f"{self.total_periods} periods, {self.execution_time:.2f}s{error_str})"
         )
+
+    @property
+    def success(self) -> bool:
+        """Returns True if backtest completed without errors."""
+        return len(self.errors) == 0
 
 
 class BacktestRunner:
@@ -188,6 +188,33 @@ class BacktestRunner:
         self._hooks: dict[str, list[Callable]] = defaultdict(list)
         self._periods_completed = 0
         self._strict = strict
+
+    def __repr__(self) -> str:
+        strategy_name = type(self.strategy).__name__
+        universe_periods = self.portfolio.asset_universe.get_period_index_range()
+        start_idx = int(universe_periods.get_loc(self.start_period))  # type: ignore[arg-type]
+        end_idx = int(universe_periods.get_loc(self.end_period))  # type: ignore[arg-type]
+        total_periods = end_idx - start_idx + 1
+        if self._periods_completed == 0 and self.current_period is None:
+            status = "not started"
+        elif self._periods_completed >= total_periods:
+            status = "done"
+        else:
+            status = "running"
+        return (
+            f"BacktestRunner(period {self._periods_completed}/{total_periods} | "
+            f"strategy={strategy_name} | {status})"
+        )
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit."""
+        # No cleanup needed for now, but placeholder for future
+        # (e.g., closing database connections, flushing logs, etc.)
+        return False  # Don't suppress exceptions
 
     def register_hook(self, event: str, callback: Callable) -> None:
         """Register a callback for a specific event.
@@ -391,30 +418,3 @@ class BacktestRunner:
         )
 
         return result
-
-    def __repr__(self) -> str:
-        strategy_name = type(self.strategy).__name__
-        universe_periods = self.portfolio.asset_universe.get_period_index_range()
-        start_idx = int(universe_periods.get_loc(self.start_period))  # type: ignore[arg-type]
-        end_idx = int(universe_periods.get_loc(self.end_period))  # type: ignore[arg-type]
-        total_periods = end_idx - start_idx + 1
-        if self._periods_completed == 0 and self.current_period is None:
-            status = "not started"
-        elif self._periods_completed >= total_periods:
-            status = "done"
-        else:
-            status = "running"
-        return (
-            f"BacktestRunner(period {self._periods_completed}/{total_periods} | "
-            f"strategy={strategy_name} | {status})"
-        )
-
-    def __enter__(self):
-        """Context manager entry."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        # No cleanup needed for now, but placeholder for future
-        # (e.g., closing database connections, flushing logs, etc.)
-        return False  # Don't suppress exceptions

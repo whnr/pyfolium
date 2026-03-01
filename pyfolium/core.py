@@ -168,14 +168,6 @@ class Asset:
         # Add the asset to the parent asset universe
         self.asset_universe.add_asset(self)
 
-    @property
-    def price(self):
-        return self.data[self.price_column]
-
-    @property
-    def income(self):
-        return self.data[self.income_column]
-
     def __repr__(self) -> str:
         price_min = self.data[self.price_column].min()
         price_max = self.data[self.price_column].max()
@@ -187,6 +179,14 @@ class Asset:
             f"{n_periods} periods | price: ${price_min:.2f}–${price_max:.2f} | "
             f"income: {income_flag})"
         )
+
+    @property
+    def price(self):
+        return self.data[self.price_column]
+
+    @property
+    def income(self):
+        return self.data[self.income_column]
 
 
 class AssetUniverse:
@@ -204,6 +204,19 @@ class AssetUniverse:
         self.income_matrix: pd.DataFrame = pd.DataFrame()
         self.empty = True
         self._price_matrix_ffill: pd.DataFrame | None = None
+
+    def __repr__(self) -> str:
+        if self.empty:
+            return f"AssetUniverse(freq={self.data_frequency} | empty)"
+        periods = self.get_period_index_range()
+        symbols = self.asset_symbols_list
+        symbol_str = ", ".join(symbols[:3])
+        if len(symbols) > 3:
+            symbol_str += ", ..."
+        return (
+            f"AssetUniverse(freq={self.data_frequency} | {len(self.assets)} assets: "
+            f"{symbol_str} | {periods[0]} → {periods[-1]} | {len(periods)} periods)"
+        )
 
     def add_asset(self, asset: Asset):
         """Add an asset to the universe with incremental matrix updates.
@@ -255,19 +268,6 @@ class AssetUniverse:
         if self._price_matrix_ffill is None:
             self._price_matrix_ffill = self.price_matrix.ffill()
         return self._price_matrix_ffill
-
-    def __repr__(self) -> str:
-        if self.empty:
-            return f"AssetUniverse(freq={self.data_frequency} | empty)"
-        periods = self.get_period_index_range()
-        symbols = self.asset_symbols_list
-        symbol_str = ", ".join(symbols[:3])
-        if len(symbols) > 3:
-            symbol_str += ", ..."
-        return (
-            f"AssetUniverse(freq={self.data_frequency} | {len(self.assets)} assets: "
-            f"{symbol_str} | {periods[0]} → {periods[-1]} | {len(periods)} periods)"
-        )
 
     @property
     def asset_symbols_list(self) -> list[str]:
@@ -400,6 +400,25 @@ class Portfolio:
         # initialize the portfolio state tracker
         self._states = pd.Series(index=period_index, data=PortfolioState.COLLECT_INCOME)
 
+    def __repr__(self) -> str:
+        state = self._states[self.current_period]  # type: ignore[call-overload]
+        state_label = state.value if isinstance(state, PortfolioState) else str(state)
+        holdings_now = self.holdings.loc[self.current_period]  # type: ignore[call-overload]
+        active = holdings_now[holdings_now != 0]
+        if active.empty:
+            holdings_str = "none"
+        else:
+            holdings_str = ", ".join(f"{sym}:{qty:g}" for sym, qty in active.items())
+        try:
+            tv = self.get_total_value()
+            total_str = f"total≈${tv:,.2f}"
+        except Exception:
+            total_str = "total=N/A"
+        return (
+            f"Portfolio(period={self.current_period} [{state_label}] | "
+            f"cash=${self.cash:,.2f} | holdings: {holdings_str} | {total_str})"
+        )
+
     def clone(self) -> "Portfolio":
         """Create an independent deep copy of the portfolio.
 
@@ -487,25 +506,6 @@ class Portfolio:
             Cash plus equity valued at the most recent available prices.
         """
         return self.get_total_value()
-
-    def __repr__(self) -> str:
-        state = self._states[self.current_period]  # type: ignore[call-overload]
-        state_label = state.value if isinstance(state, PortfolioState) else str(state)
-        holdings_now = self.holdings.loc[self.current_period]  # type: ignore[call-overload]
-        active = holdings_now[holdings_now != 0]
-        if active.empty:
-            holdings_str = "none"
-        else:
-            holdings_str = ", ".join(f"{sym}:{qty:g}" for sym, qty in active.items())
-        try:
-            tv = self.get_total_value()
-            total_str = f"total≈${tv:,.2f}"
-        except Exception:
-            total_str = "total=N/A"
-        return (
-            f"Portfolio(period={self.current_period} [{state_label}] | "
-            f"cash=${self.cash:,.2f} | holdings: {holdings_str} | {total_str})"
-        )
 
     def _check_state(self, expected_state: PortfolioState) -> None:
         current_state = self._states[self.current_period]  # type: ignore[call-overload]

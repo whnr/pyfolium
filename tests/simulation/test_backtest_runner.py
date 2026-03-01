@@ -1,5 +1,7 @@
 """Minimal tests for BacktestRunner that avoid pandas/numpy compatibility issues."""
 
+import contextlib
+
 import pandas as pd
 import pytest
 
@@ -359,7 +361,7 @@ def test_runner_explicit_start_period_overrides_strategy(asset_universe):
 
 
 def test_runner_falls_back_to_current_period_when_both_none(asset_universe):
-    """When both runner and strategy start_period are None, portfolio.current_period is used."""
+    """Falls back to portfolio.current_period when both start_period fields are None."""
     portfolio = Portfolio(asset_universe)
     expected = portfolio.current_period
 
@@ -411,10 +413,8 @@ def test_initial_cash_works_in_step_by_step_mode(asset_universe):
     strategy = CashCheckingStrategy(portfolio, initial_cash=25000.0)
 
     runner = BacktestRunner(portfolio, strategy)
-    try:
+    with contextlib.suppress(StopIteration):
         runner.run_period()
-    except StopIteration:
-        pass
 
     assert strategy.first_period_cash == pytest.approx(25000.0)
 
@@ -422,7 +422,9 @@ def test_initial_cash_works_in_step_by_step_mode(asset_universe):
 def test_initial_cash_not_reinjected_on_second_run_period(asset_universe):
     """initial_cash is not injected again on the second manual run_period() call."""
     portfolio = Portfolio(asset_universe)
-    runner = BacktestRunner(portfolio, DoNothingStrategy(portfolio, initial_cash=5000.0))
+    runner = BacktestRunner(
+        portfolio, DoNothingStrategy(portfolio, initial_cash=5000.0)
+    )
 
     for _ in range(2):
         try:

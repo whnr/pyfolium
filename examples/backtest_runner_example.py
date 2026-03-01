@@ -58,7 +58,9 @@ class BuyAndHoldStrategy(BaseStrategy):
     """Simple buy-and-hold strategy that invests on day 1."""
 
     def __init__(self, portfolio, symbol="STOCK_A", quantity=100, **kwargs):
-        super().__init__(portfolio, parameters={"symbol": symbol, "quantity": quantity}, **kwargs)
+        super().__init__(
+            portfolio, parameters={"symbol": symbol, "quantity": quantity}, **kwargs
+        )
         self.symbol = symbol
         self.quantity = quantity
         self.invested = False
@@ -124,7 +126,9 @@ def example_simple():
     universe = create_sample_universe()
     portfolio = Portfolio(universe)
 
-    strategy = BuyAndHoldStrategy(portfolio, symbol="STOCK_A", quantity=100, initial_cash=50000)
+    strategy = BuyAndHoldStrategy(
+        portfolio, symbol="STOCK_A", quantity=100, initial_cash=50000
+    )
 
     # Run backtest - that's it!
     runner = BacktestRunner(portfolio, strategy)
@@ -182,7 +186,9 @@ def example_with_hooks():
     universe = create_sample_universe()
     portfolio = Portfolio(universe)
 
-    strategy = BuyAndHoldStrategy(portfolio, symbol="STOCK_B", quantity=200, initial_cash=50000)
+    strategy = BuyAndHoldStrategy(
+        portfolio, symbol="STOCK_B", quantity=200, initial_cash=50000
+    )
 
     # Define custom hooks
     def log_period_start(runner):
@@ -257,11 +263,15 @@ def example_compare_strategies():
 
     # Each strategy declares its own initial capital and gets an independent clone
     portfolio1 = base_portfolio.clone()
-    strategy1 = BuyAndHoldStrategy(portfolio1, symbol="STOCK_A", quantity=200, initial_cash=100000)
+    strategy1 = BuyAndHoldStrategy(
+        portfolio1, symbol="STOCK_A", quantity=200, initial_cash=100000
+    )
     result1 = BacktestRunner(portfolio1, strategy1).run()
 
     portfolio2 = base_portfolio.clone()
-    strategy2 = BuyAndHoldStrategy(portfolio2, symbol="STOCK_B", quantity=400, initial_cash=100000)
+    strategy2 = BuyAndHoldStrategy(
+        portfolio2, symbol="STOCK_B", quantity=400, initial_cash=100000
+    )
     result2 = BacktestRunner(portfolio2, strategy2).run()
 
     portfolio3 = base_portfolio.clone()
@@ -305,7 +315,9 @@ def example_custom_period_range():
 
     # Strategy declares start period (e.g. after warmup window) and initial cash
     periods = universe.get_period_index_range()
-    strategy = BuyAndHoldStrategy(portfolio, initial_cash=50000, start_period=periods[1])
+    strategy = BuyAndHoldStrategy(
+        portfolio, initial_cash=50000, start_period=periods[1]
+    )
 
     # Runner only needs end_period; start_period comes from the strategy
     runner = BacktestRunner(

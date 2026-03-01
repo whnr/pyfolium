@@ -357,6 +357,22 @@ class TestGetTotalValue:
         # cash = 1000 - 20 = 980; equity = 1 * 20 = 20 (ffill) → 1000
         assert last_valid == pytest.approx(1000.0)
 
+    def test_always_retun_nan_with_short_asset(self, universe_with_short_asset):
+        """In LAST_VALID mode, we return nan if we hold an asset after its end_time"""
+        portfolio = Portfolio(asset_universe=universe_with_short_asset)
+        portfolio.collect_income()
+        portfolio.move_cash(1000.0)
+        portfolio.buy_asset("B", 1)  # B price will be NaN at period 6
+        portfolio.update_history()
+        portfolio.advance_period()
+        for _ in range(4):
+            portfolio.collect_income()
+            portfolio.update_history()
+            portfolio.advance_period()
+        # B is now after end_time. Even in PriceMode.LAST_VALID we should get a NaN.
+        last_valid = portfolio.get_total_value(PriceMode.LAST_VALID)
+        assert math.isnan(last_valid)
+
     def test_total_value_reflects_price_change_over_periods(self, simple_universe):
         """total_value should increase as asset prices rise."""
         portfolio = Portfolio(asset_universe=simple_universe)

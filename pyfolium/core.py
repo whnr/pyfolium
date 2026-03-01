@@ -484,18 +484,20 @@ class Portfolio:
             price_mode: How to resolve prices for held assets.
                 PriceMode.LAST_VALID (default) uses the forward-filled price
                 matrix, so the most recent available price is used even when
-                today's price is NaN (e.g. a data gap or non-trading day).
+                today's price is NaN for a data gap. Not forward-filled after
+                the end_time of an asset.
                 PriceMode.STRICT uses the raw price matrix; if any held asset
                 has no price for the current period, returns float("nan").
 
         Returns:
             Total portfolio value as cash + equity, or float("nan") if the
-            equity cannot be computed (only possible in STRICT mode).
+            equity cannot be computed (only possible in STRICT mode) or
+            if an asset is held past its end_time.
         """
         holdings = self.holdings.loc[self.current_period]  # type: ignore[call-overload]
         if price_mode == PriceMode.LAST_VALID:
             prices = self.asset_universe.price_matrix_ffill.loc[self.current_period]  # type: ignore[call-overload]
-            equity = float((holdings * prices).sum())
+            equity = float((holdings * prices).sum(skipna=False))
         else:
             prices = self.asset_universe.price_matrix.loc[self.current_period]  # type: ignore[call-overload]
             equity = float((holdings * prices).sum(skipna=False))

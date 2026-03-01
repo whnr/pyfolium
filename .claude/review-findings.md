@@ -2,7 +2,7 @@
 
 *Created: 2026-02-22 | Session: review-architecture-changes-GWIjK*
 *Updated: 2026-02-24 | Data gaps handling implemented + refactored per PR review (universe matrices as sole runtime data interface, removed get_price_at/get_income_at)*
-*Updated: 2026-02-28 | Rebased onto development; mypy → pyright (cast() for reportAssignmentType, warnings demoted in pyproject.toml for remaining pandas-stubs false-positives)*
+*Updated: 2026-02-28 | Rebased onto dev; mypy → pyright (cast() for reportAssignmentType, warnings demoted in pyproject.toml for remaining pandas-stubs false-positives)*
 *Context: Full codebase review for production readiness — decades of daily data, AI-written strategies*
 
 **After completion items will be deleted and can be recovered from git commit history.**
@@ -83,30 +83,6 @@ def sell_lot(self, symbol: str, lot_id: int, quantity: float):
 ---
 
 ## P2 — Design issues & cleanup
-
-### P2-4: Remove empty context manager
-**File:** `pyfolium/simulation.py:362-370`
-**Problem:** `__enter__`/`__exit__` do nothing. Context managers manage resources; there are none.
-**Fix:** Remove `__enter__`, `__exit__`. Remove Example 7 from examples.
-**Test impact:** Remove `test_context_manager` from test_backtest_runner.py.
-
-### P2-5: Add `Portfolio.total_value` property
-**File:** `pyfolium/core.py` (new property on Portfolio)
-**Problem:** Every example and every strategy repeats:
-```python
-holdings = portfolio.holdings.loc[portfolio.current_period]
-prices = universe.price_matrix.loc[portfolio.current_period]
-total_value = portfolio.cash + (holdings * prices).sum()
-```
-**Fix:**
-```python
-@property
-def total_value(self) -> float:
-    holdings = self.holdings.loc[self.current_period]
-    prices = self.asset_universe.price_matrix.loc[self.current_period]
-    return self.cash + (holdings * prices).sum()
-```
-**Test:** Verify against manual calculation at various points.
 
 ### P2-6: Silent failure swallowing in `execute_trades`
 **File:** `pyfolium/strategy.py:74-75`
@@ -314,8 +290,6 @@ All examples updated to drop the 4-line boilerplate. 13 new tests added (5 in
 
 Recommended sequence:
 
-4. ~~**Strategy start conditions**~~ ✓ **DONE** — `initial_cash` + `start_period` on BaseStrategy, runner sync.
-5. **P2-5** (total_value property) — Small, used by everything downstream
 6. **P2-6** (trade failure warnings) — Small, important for AI strategies
 7. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort
 9. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
@@ -324,7 +298,6 @@ Recommended sequence:
 12. **P1-4** (error recovery) — Design decision needed first
 13. **Logging architecture** — Replace `.errors` with `.log`, structured entries. Depends on P1-4.
 14. **Verbosity/OutputMode** — Terminal filtering over the log. Subsumes P2-6 and tqdm logic.
-15. **P2-4** (remove context manager) — Affects examples and tests
 16. **P4-*** (testable examples, audit existing) — After all API changes settle
 
 Each step should be a single reviewable commit.

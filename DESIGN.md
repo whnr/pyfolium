@@ -199,6 +199,23 @@ This means a strategy that blindly trades every period won't crash — it will a
 
 Note: the Asset class is a validated data container that feeds the universe at construction time. At runtime, all price and income queries go through `universe.price_matrix` and `universe.income_matrix` — not through individual Asset methods. This ensures a single, consistent data access path with predictable NaN behavior for out-of-range periods.
 
+### Asset lifetime and forward-fill semantics
+
+`price_matrix_ffill` fills NaN values forward to handle intra-life gaps (e.g. a missing price on a market holiday). It does **not** fill past each asset's `end_time` — the last date in its data.
+
+Two kinds of NaN appear in the raw price matrix with different semantics:
+
+- **Intra-life gap** — a period between `start_time` and `end_time` where no price was recorded (e.g. a market holiday). The ffill matrix fills these with the most recent prior price. Strategies should treat this price as valid.
+- **Post-termination** — a period after `end_time`. These remain NaN in the ffill matrix. The asset simply does not exist there.
+
+This distinction matters regardless of asset type. A matured bond, a delisted stock, and a fund with data through last year all have the same model: the data you provided defines the asset's lifetime. Filling past the last data point would fabricate prices that are not in the historical record.
+
+**Strategy responsibility:** it is the strategy's job not to hold an asset past its `end_time`. If a strategy holds asset B through period 100 but B's data ends at period 80, then from period 81 onward:
+- `PriceMode.STRICT` — `get_total_value()` returns NaN (B's price is NaN in the raw matrix).
+- `PriceMode.LAST_VALID` — `get_total_value()` also returns NaN (B's price is NaN in the ffill matrix, since post-termination periods are not filled).
+
+A strategy can detect this in advance by checking `universe.assets[symbol].end_time` before the period arrives and exiting the position in time.
+
 ### Income gaps
 
 NaN income values (from universe alignment) are treated as zero income for that period. There is nothing to collect where there is no data — this is not an error condition.

@@ -13,12 +13,39 @@ class BaseStrategy(ABC):
         asset_universe: The universe of tradeable assets
         parameters: Dictionary of strategy-specific parameters
         trades_df: DataFrame tracking all attempted trades
+        initial_cash: Cash to inject via move_cash() at the start of the first
+            backtest period, or None if no injection is desired.
+        start_period: The first period this strategy should run from, used as
+            a fallback when BacktestRunner has no explicit start_period, or
+            None to defer to the runner's own default.
     """
 
-    def __init__(self, portfolio: Portfolio, parameters: dict | None = None):
+    def __init__(
+        self,
+        portfolio: Portfolio,
+        parameters: dict | None = None,
+        *,
+        initial_cash: float | None = None,
+        start_period: pd.Period | None = None,
+    ):
+        """Initialize the strategy.
+
+        Args:
+            portfolio: The portfolio this strategy will manage.
+            parameters: Optional dictionary of strategy-specific parameters.
+            initial_cash: Cash amount to inject via move_cash() at the start of
+                the first period. Injection happens after collect_income()
+                (TRANSACT state) and before the strategy's first get_trades()
+                call. Defaults to None (no injection).
+            start_period: The period from which this strategy should begin.
+                BacktestRunner uses this when its own start_period is None.
+                Defaults to None.
+        """
         self.portfolio = portfolio
         self.asset_universe = portfolio.asset_universe
         self.parameters = parameters or {}
+        self.initial_cash = initial_cash
+        self.start_period = start_period
 
         # Track all trade attempts and their execution
         self.trades_df = pd.DataFrame(

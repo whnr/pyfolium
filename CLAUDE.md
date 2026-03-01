@@ -27,6 +27,8 @@ The project name is a German pun: "Hätte hätte Fahrradkette" (roughly translat
 - Tests include automatic coverage reporting to `coverage/` directory
 - Coverage targets: `pyfolium.core`, `pyfolium.strategy`, `pyfolium.simulation`, `pyfolium.data`
 
+**Development style: test-driven.** Write or update tests before (or alongside) implementation. Every new feature or bug fix must have a corresponding test. The test suite is the contract — if it passes, the implementation is correct.
+
 ### Code Quality
 - Format and fix: `uv run ruff format .` (replaces black)
 - Lint and fix: `uv run ruff check --fix .` (replaces flake8 and isort)
@@ -81,6 +83,8 @@ This state machine is enforced via `PortfolioState` enum to prevent operations i
 - `step()` method gets trades and executes them via portfolio
 - Tracks all trade attempts (successful and failed) in `trades_df`
 - Parameters stored in `parameters` dict for reproducibility
+- `initial_cash`: optional cash deposited via `move_cash()` at the first active period (keyword-only, `None` by default)
+- `start_period`: optional first period for this strategy; `BacktestRunner` resolves it with precedence: explicit runner arg > `strategy.start_period` > `portfolio.current_period` (keyword-only, `None` by default)
 
 **BacktestRunner** (`pyfolium/simulation.py`): Automated simulation orchestration
 - Automates the period-by-period execution loop
@@ -117,12 +121,23 @@ The test suite uses extensive pytest fixtures (see `tests/conftest.py`):
 
 Tests use `deepdiff` for DataFrame comparisons and `pytest-mock` for mocking.
 
+## Documentation Freshness
+
+**README.md, DESIGN.md, and CLAUDE.md must be kept in sync with the code.** After any feature implementation or API change, update all three before committing:
+
+- **README.md** — user-facing: quick start, usage examples, API surface
+- **DESIGN.md** — architectural rationale, design decisions, modeling philosophy
+- **CLAUDE.md** — this file; development workflow, architecture summary, current state
+
+If a change affects examples, update the files in `examples/` too.
+
 ## Code Style
 
-- Docstring format: Google style (changed from previous style as of commit 52ca78d)
+- Docstring format: Google style
 - Line length: 88 characters (black default)
 - Type hints: Preferred for public methods, using pandas-stubs for DataFrame typing
 - Pandas display: Tests configure unlimited column display for debugging
+- No backwards-facing comments in code (e.g. "no longer needed", "replaces old approach", "eliminates boilerplate"). Those belong in commit messages and changelogs, not in source files. Code is static; history lives in git.
 
 ## Project Structure
 
@@ -149,8 +164,9 @@ strategies/         # User-defined strategies (empty, for users to populate)
 ## Current State
 
 Recent features:
+- **Strategy start conditions**: `BaseStrategy` accepts `initial_cash` and `start_period` keyword args; `BacktestRunner` injects cash on the first active period and resolves start period with precedence: runner arg > `strategy.start_period` > `portfolio.current_period`
 - **Data gaps handling**: Asset rejects NaN prices at construction; trades on out-of-range periods fail gracefully via `success=False` in `trades_df`; NaN income treated as zero
-- **BacktestRunner**: Automated simulation with hooks and progress reporting (370 LOC)
+- **BacktestRunner**: Automated simulation with hooks and progress reporting
 - **Portfolio.clone()**: Deep copy for strategy comparison and optimization
 - **Pydantic validation**: TaxConfig and FeeConfig with automatic validation
 - **Data loading**: load_from_csv and load_from_dataframe utilities

@@ -10,6 +10,7 @@ from pyfolium.core import (
     FeeConfig,
     Portfolio,
     PortfolioState,
+    PriceMode,
     TaxConfig,
 )
 from pyfolium.data import (
@@ -26,6 +27,7 @@ __all__ = [
     "AssetUniverse",
     "Portfolio",
     "PortfolioState",
+    "PriceMode",
     # Configuration
     "TaxConfig",
     "FeeConfig",

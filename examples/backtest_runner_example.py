@@ -92,10 +92,9 @@ class MonthlyRebalanceStrategy(BaseStrategy):
 
         self.days_since_rebalance = 0
 
-        # Calculate current portfolio value
+        portfolio_value = self.portfolio.total_value
         holdings = self.portfolio.holdings.loc[self.portfolio.current_period]
         prices = self.asset_universe.price_matrix.loc[self.portfolio.current_period]
-        portfolio_value = self.portfolio.cash + (holdings * prices).sum()
 
         # Calculate target shares for each asset
         trades = []
@@ -165,11 +164,7 @@ def example_with_progress():
     runner = BacktestRunner(portfolio, strategy)
     result = runner.run(progress=True)  # Shows progress bar!
 
-    # Calculate total portfolio value
-    holdings = result.portfolio.holdings.loc[result.end_period]
-    prices = universe.price_matrix.loc[result.end_period]
-    total_value = result.portfolio.cash + (holdings * prices).sum()
-    print(f"\nFinal portfolio value: ${total_value:,.2f}")
+    print(f"\nFinal portfolio value: ${result.portfolio.total_value:,.2f}")
 
 
 # =============================================================================
@@ -194,12 +189,8 @@ def example_with_hooks():
     def log_period_start(runner):
         """Log at the start of each period."""
         if runner._periods_completed % 50 == 0:  # Log every 50 periods
-            holdings = runner.portfolio.holdings.loc[runner.current_period]
-            prices = runner.portfolio.asset_universe.price_matrix.loc[
-                runner.current_period
-            ]
-            portfolio_value = runner.portfolio.cash + (holdings * prices).sum()
             period_num = runner._periods_completed
+            portfolio_value = runner.portfolio.total_value
             print(f"Period {period_num}: Portfolio value = ${portfolio_value:,.2f}")
 
     def log_backtest_end(runner):
@@ -278,25 +269,10 @@ def example_compare_strategies():
     strategy3 = MonthlyRebalanceStrategy(portfolio3, initial_cash=100000)
     result3 = BacktestRunner(portfolio3, strategy3).run()
 
-    # Compare results (calculate total portfolio value including holdings)
-    universe = result1.portfolio.asset_universe
-
-    holdings1 = result1.portfolio.holdings.loc[result1.end_period]
-    prices1 = universe.price_matrix.loc[result1.end_period]
-    value1 = result1.portfolio.cash + (holdings1 * prices1).sum()
-
-    holdings2 = result2.portfolio.holdings.loc[result2.end_period]
-    prices2 = universe.price_matrix.loc[result2.end_period]
-    value2 = result2.portfolio.cash + (holdings2 * prices2).sum()
-
-    holdings3 = result3.portfolio.holdings.loc[result3.end_period]
-    prices3 = universe.price_matrix.loc[result3.end_period]
-    value3 = result3.portfolio.cash + (holdings3 * prices3).sum()
-
     print("\nStrategy Comparison:")
-    print(f"  Strategy 1 (STOCK_A only): Total value = ${value1:,.2f}")
-    print(f"  Strategy 2 (STOCK_B only): Total value = ${value2:,.2f}")
-    print(f"  Strategy 3 (Rebalancing):  Total value = ${value3:,.2f}")
+    print(f"  Strategy 1 (STOCK_A only): Total value = ${result1.portfolio.total_value:,.2f}")
+    print(f"  Strategy 2 (STOCK_B only): Total value = ${result2.portfolio.total_value:,.2f}")
+    print(f"  Strategy 3 (Rebalancing):  Total value = ${result3.portfolio.total_value:,.2f}")
 
 
 # =============================================================================

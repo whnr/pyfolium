@@ -392,6 +392,23 @@ class BacktestRunner:
 
         return result
 
+    def __repr__(self) -> str:
+        strategy_name = type(self.strategy).__name__
+        universe_periods = self.portfolio.asset_universe.get_period_index_range()
+        start_idx = int(universe_periods.get_loc(self.start_period))  # type: ignore[arg-type]
+        end_idx = int(universe_periods.get_loc(self.end_period))  # type: ignore[arg-type]
+        total_periods = end_idx - start_idx + 1
+        if self._periods_completed == 0 and self.current_period is None:
+            status = "not started"
+        elif self._periods_completed >= total_periods:
+            status = "done"
+        else:
+            status = "running"
+        return (
+            f"BacktestRunner(period {self._periods_completed}/{total_periods} | "
+            f"strategy={strategy_name} | {status})"
+        )
+
     def __enter__(self):
         """Context manager entry."""
         return self

@@ -103,6 +103,25 @@ class Asset:
         income_column: str | None = None,
         metadata: dict[str, str] | None = None,
     ):
+        """Initialize an Asset and register it with the given AssetUniverse.
+
+        Args:
+            symbol: Ticker or identifier for this asset.
+            asset_universe: Universe this asset belongs to; the asset
+                auto-registers itself on construction.
+            data: DataFrame with a PeriodIndex at the universe's data
+                frequency. Must contain a price column with no NaN values.
+            price_column: Column name for prices. Defaults to "price".
+            income_column: Column name for income/dividends. If None, an
+                all-zero income column named "income" is created automatically.
+            metadata: Optional dictionary of arbitrary string metadata.
+
+        Raises:
+            ValueError: If price_column is missing from data, data lacks a
+                PeriodIndex, the index frequency mismatches the universe, the
+                index is non-monotonic or non-unique, or the price column
+                contains NaN values.
+        """
         self.symbol = symbol
         self.asset_universe = asset_universe
         self.data = data.copy()
@@ -157,20 +176,34 @@ class Asset:
     def income(self):
         return self.data[self.income_column]
 
+    def __repr__(self) -> str:
+        price_min = self.data[self.price_column].min()
+        price_max = self.data[self.price_column].max()
+        n_periods = len(self.data)
+        has_income = bool(self.data[self.income_column].any())
+        income_flag = "yes" if has_income else "no"
+        return (
+            f"Asset({self.symbol} | {self.start_time} → {self.end_time} | "
+            f"{n_periods} periods | price: ${price_min:.2f}–${price_max:.2f} | "
+            f"income: {income_flag})"
+        )
+
 
 class AssetUniverse:
     def __init__(self, data_frequency: str):
-        """Initialize the empty AssetUniverse
+        """Initialize an empty AssetUniverse.
 
         Args:
-            data_frequency (str): String describing the frequency of the data.
-                Must be one of the pandas period aliases like 'D' or 'M'.
+            data_frequency: Pandas period frequency string shared by all
+                assets in this universe (e.g. "D" for daily, "M" for
+                monthly). Every asset added must use the same frequency.
         """
         self.data_frequency = data_frequency
         self.assets: dict[str, Asset] = {}
         self.price_matrix: pd.DataFrame = pd.DataFrame()
         self.income_matrix: pd.DataFrame = pd.DataFrame()
         self.empty = True
+        self._price_matrix_ffill: pd.DataFrame | None = None
 
     def add_asset(self, asset: Asset):
         """Add an asset to the universe with incremental matrix updates.
@@ -204,8 +237,37 @@ class AssetUniverse:
         self.price_matrix = self.price_matrix.reindex(new_period_range)
         self.income_matrix = self.income_matrix.reindex(new_period_range)
 
+        # Invalidate the ffill cache since the price matrix changed
+        self._price_matrix_ffill = None
+
         # Finally flag that the universe is not empty anymore
         self.empty = False
+
+    @property
+    def price_matrix_ffill(self) -> pd.DataFrame:
+        """Forward-filled price matrix, computed lazily on first access.
+
+        Returns:
+            DataFrame with the same shape as price_matrix, where each NaN
+            is filled with the most recent prior valid price for that asset.
+            The result is cached and recomputed only when new assets are added.
+        """
+        if self._price_matrix_ffill is None:
+            self._price_matrix_ffill = self.price_matrix.ffill()
+        return self._price_matrix_ffill
+
+    def __repr__(self) -> str:
+        if self.empty:
+            return f"AssetUniverse(freq={self.data_frequency} | empty)"
+        periods = self.get_period_index_range()
+        symbols = self.asset_symbols_list
+        symbol_str = ", ".join(symbols[:3])
+        if len(symbols) > 3:
+            symbol_str += ", ..."
+        return (
+            f"AssetUniverse(freq={self.data_frequency} | {len(self.assets)} assets: "
+            f"{symbol_str} | {periods[0]} → {periods[-1]} | {len(periods)} periods)"
+        )
 
     @property
     def asset_symbols_list(self) -> list[str]:
@@ -237,6 +299,11 @@ class PortfolioState(Enum):
     COLLECT_INCOME = "COLLECT_INCOME"
     TRANSACT = "TRANSACT"
     DONE = "DONE"
+
+
+class PriceMode(Enum):
+    STRICT = "strict"
+    LAST_VALID = "last_valid"
 
 
 class Portfolio:
@@ -278,39 +345,25 @@ class Portfolio:
         fee_config: FeeConfig | None = None,
         tax_config: TaxConfig | None = None,
     ):
-        """
-        Initialize the Portfolio.
+        """Initialize a Portfolio backed by the given AssetUniverse.
 
         Args:
-            asset_universe (AssetUniverse):
-                The asset universe containing the assets in the portfolio.
-            fee_config (FeeConfig, optional):
-                Configuration for transaction fees, by default FeeConfig().
-            tax_config (TaxConfig, optional):
-                Configuration for tax calculations, by default TaxConfig().
+            asset_universe: Universe containing all tradeable assets. Must be
+                non-empty; add all assets before constructing the portfolio.
+            fee_config: Transaction fee configuration. Defaults to
+                FeeConfig() (no fees).
+            tax_config: Tax calculation configuration. Defaults to
+                TaxConfig() (no taxes).
 
-        Attributes:
-            current_period: The time we're at right now.
-                Shall be advanced strictly monotonously.
-                Is initialized to the first period in the AssetUniverse.
-            cash (float): The cash balance of the portfolio.
-            tax_owed (float): The tax owed by the portfolio.
-            history (pd.DataFrame): DataFrame tracking historical cash, taxes, gains.
-            transactions (pd.DataFrame): DataFrame containing the transaction history.
-            holdings (pd.DataFrame): DataFrame tracking the asset holdings over time.
+        Raises:
+            ValueError: If asset_universe is empty.
 
         Notes:
-            The Portfolio is initialized with a cash balance of 0.0.
-
-            The portfolio state is tracked through the `_portfolio_states` series.
-            The order of operations to update the portfolio in each period
-            is enforced through the following steps:
-            1. `collect_income`
-            2. execute any transactions like `buy` or `move_cash`
-            3. `update_history`
-
-            Nobody is watching if you have enough cash for any transaction.
-            You need to check that yourself.
+            Portfolio starts at the first period in the universe with $0 cash.
+            Operations must follow the state machine order each period:
+            collect_income → transact (buy/sell/move_cash) → update_history.
+            Cash balances are not validated; you are responsible for ensuring
+            sufficient funds before executing transactions.
         """
         self.asset_universe = asset_universe
         if self.asset_universe.empty:
@@ -395,6 +448,66 @@ class Portfolio:
         cloned._states = self._states.copy(deep=True)
 
         return cloned
+
+    def get_total_value(self, price_mode: PriceMode = PriceMode.LAST_VALID) -> float:
+        """Compute total portfolio value (cash + equity) at the current period.
+
+        Args:
+            price_mode: How to resolve prices for held assets.
+                PriceMode.LAST_VALID (default) uses the forward-filled price
+                matrix, so the most recent available price is used even when
+                today's price is NaN (e.g. a data gap or non-trading day).
+                PriceMode.STRICT uses the raw price matrix; if any held asset
+                has no price for the current period, returns float("nan").
+
+        Returns:
+            Total portfolio value as cash + equity, or float("nan") if the
+            equity cannot be computed (only possible in STRICT mode).
+        """
+        holdings = self.holdings.loc[self.current_period]  # type: ignore[call-overload]
+        if price_mode == PriceMode.LAST_VALID:
+            prices = self.asset_universe.price_matrix_ffill.loc[self.current_period]  # type: ignore[call-overload]
+            equity = float((holdings * prices).sum())
+        else:
+            prices = self.asset_universe.price_matrix.loc[self.current_period]  # type: ignore[call-overload]
+            equity = float((holdings * prices).sum(skipna=False))
+        if pd.isna(equity):
+            return float("nan")
+        return float(self.cash + equity)
+
+    @property
+    def total_value(self) -> float:
+        """Total portfolio value using last-valid (forward-filled) prices.
+
+        Convenience property equivalent to ``get_total_value(PriceMode.LAST_VALID)``.
+        Use ``get_total_value(PriceMode.STRICT)`` to get NaN when today's price
+        data is missing for any held position.
+
+        Returns:
+            Cash plus equity valued at the most recent available prices.
+        """
+        return self.get_total_value()
+
+    def __repr__(self) -> str:
+        state = self._states[self.current_period]  # type: ignore[call-overload]
+        state_label = state.value if isinstance(state, PortfolioState) else str(state)
+        holdings_now = self.holdings.loc[self.current_period]  # type: ignore[call-overload]
+        active = holdings_now[holdings_now != 0]
+        if active.empty:
+            holdings_str = "none"
+        else:
+            holdings_str = ", ".join(
+                f"{sym}:{qty:g}" for sym, qty in active.items()
+            )
+        try:
+            tv = self.get_total_value()
+            total_str = f"total≈${tv:,.2f}"
+        except Exception:
+            total_str = "total=N/A"
+        return (
+            f"Portfolio(period={self.current_period} [{state_label}] | "
+            f"cash=${self.cash:,.2f} | holdings: {holdings_str} | {total_str})"
+        )
 
     def _check_state(self, expected_state: PortfolioState) -> None:
         current_state = self._states[self.current_period]  # type: ignore[call-overload]

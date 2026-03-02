@@ -10,13 +10,15 @@
 
 BacktestRunner captures exceptions in `_errors: list[tuple[pd.Period, Exception]]`, which is too narrow. Three categories of runtime events go unrecorded or are invisible:
 
-1. **Trade failures** — `BaseStrategy.execute_trades()` catches `ValueError` and records `success=False` in `trades_df`, but emits no warning and produces no log entry. AI-written strategies can silently fail every trade for an entire backtest. (P2-6)
+1. **Trade failures** — `BaseStrategy.execute_trades()` catches `ValueError` and records `success=False` in `trades_df`, but emits no warning and produces no log entry. AI-written strategies can silently fail every trade for an entire backtest. (P2-6) FLOCOMMENT: Isn't that actually a great pattern? The trade is still registered, but as failed. That's where it matters! Isn't that what a strategy would care about? It's all about `get_trades`. If the trade has been made good! If not I'll find it there.
 
 2. **Operational warnings** — Lenient-mode recovery, hook exceptions, and negative-cash conditions use `warnings.warn()`, which produces unstructured output that isn't captured in the result object. Users can't programmatically inspect what happened.
 
 3. **Normal execution diagnostics** — There is no record of what happened period-by-period beyond raw `transactions` and `history` DataFrames. No summary of trades attempted vs executed, no lifecycle events, no timestamps.
 
 The current `BacktestResult.errors` is a flat list of `(period, exception)` tuples. The `success` property is binary. There is no severity model, no structured data, and no filtering.
+
+FLOCOMMENT: Is another point that we cannot debug when or what something was slow? How would we do perforance profiling where a strategy might get slow over time? --> don't we need timestamps for that?
 
 ## Goals
 
@@ -25,15 +27,17 @@ The current `BacktestResult.errors` is a flat list of `(period, exception)` tupl
 3. Subsume `warnings.warn()` calls in the runner: these become log entries with proper severity.
 4. Add an `OutputMode` enum controlling what gets printed to terminal during `run()`.
 5. Expose the log as a queryable DataFrame on `BacktestResult`.
-6. Preserve backwards compatibility where practical; document breaking changes clearly.
+6. backwards compatibility not required. Noone is using this module yet. Write Documentation as if it has always been this way.
+
+FLOCOMMENT: on dataframe: Why a dataframe as the goal? Isn't a df bad for appending unnkown lengths of anything? Isn't this much better as a dict? Or a list?
 
 ## Non-Goals (future observability, out of scope)
 
-- **Per-period structured summaries** (trades attempted/executed/failed, portfolio value, cash) — useful for LLM consumers but a separate feature that builds *on top of* the log infrastructure. Can be added as INFO-level entries later or as a dedicated `period_summary` DataFrame.
+- **Per-period structured summaries** (trades attempted/executed/failed, portfolio value, cash) — useful for LLM consumers but a separate feature that builds *on top of* the log infrastructure. Can be added as INFO-level entries later or as a dedicated `period_summary` DataFrame. FLOCOMMENT: Is a per-period structured summary ever a good idea? If we run 10,000 periods = 30 years we'll dump 1M tokens at an LLM. That would be mayhem, right? I think there needs to be a leaner approach to observability in general. We want to capture all data in dfs.
 - **Streaming/callback log consumers** — e.g., a websocket that pushes log entries in real time. The hook system already provides extension points; the log is a capture mechanism, not a pub/sub system.
 - **Log persistence** — writing logs to files, databases, or external services. Users can serialize `result.log_df` however they want.
-- **Python `logging` module integration** — the standard library logger is designed for application-level logging with global state (handlers, formatters, levels). Pyfolium's log is a *simulation record* scoped to a single backtest run. Mixing the two would create confusing interactions (global log level affecting simulation capture, handler configuration leaking between runs). The `LogEntry` structure is intentionally independent. Users who want to bridge the two can write a hook or post-process `log_df`.
-- **`STRUCTURED` OutputMode with per-period JSON dicts** — described in review-findings.md as a fourth output mode yielding per-period structured data for LLMs. This is better implemented as a separate feature (period summary generation) once the log infrastructure exists. The three modes (SILENT, SUMMARY, PROGRESS) cover the immediate needs.
+- **Python `logging` module integration** — the standard library logger is designed for application-level logging with global state (handlers, formatters, levels). Pyfolium's log is a *simulation record* scoped to a single backtest run. Mixing the two would create confusing interactions (global log level affecting simulation capture, handler configuration leaking between runs). The `LogEntry` structure is intentionally independent. Users who want to bridge the two can write a hook or post-process `log_df`.FLOCOMMENT: If I understand this correctly: We'd want to do this because there might be concurrency (8 strategies running in parallel) where we don't all the messages to end up in one application log.
+- **`STRUCTURED` OutputMode with per-period JSON dicts** — described in review-findings.md as a fourth output mode yielding per-period structured data for LLMs. This is better implemented as a separate feature (period summary generation) once the log infrastructure exists. The three modes (SILENT, SUMMARY, PROGRESS) cover the immediate needs. FLOCOMMENT: As said above: I think these might be a bad idea at every period, maybe it should be up to the strategy to define periodic outputs in an expected format for themselves?
 
 ---
 
@@ -60,6 +64,7 @@ class LogEntry:
 
     Attributes:
         severity: Severity level (DEBUG, INFO, WARNING, ERROR).
+        FLOCOMMENT: add something like this timestamp: The simulation time when the event occurred.
         period: The simulation period when the event occurred.
         source: Dot-path identifying where the event originated
             (e.g., "runner", "strategy", "hook").
@@ -67,6 +72,7 @@ class LogEntry:
         data: Optional structured data for programmatic inspection.
     """
     severity: Severity
+    timestamp: FLOCOMMENT: something here. Maybe float
     period: pd.Period
     source: str
     message: str
@@ -79,7 +85,9 @@ class LogEntry:
 - **`Severity` as `IntEnum`** — enables `>=` comparisons for filtering (`entry.severity >= Severity.WARNING`). Standard DEBUG/INFO/WARNING/ERROR. No CRITICAL — an ERROR that stops the backtest is distinguishable by context (strict mode raises, lenient mode continues).
 - **`source` field** — identifies the component: `"runner"`, `"strategy"`, `"hook"`. Useful for filtering ("show me only strategy-level events").
 - **`data` field** — optional dict for structured context. Trade failures include `{"symbol": "AAPL", "quantity": 100, "error": "no price data"}`. Exceptions include `{"exception_type": "ValueError", "traceback": "..."}`. Can be `None` for simple messages.
-- **No wall-clock timestamp in the dataclass** — the log is a simulation record. Wall-clock time is irrelevant after the fact. Terminal output (controlled by OutputMode) may include wall-clock timestamps for real-time monitoring, but the persisted log uses simulation periods only.
+- **No wall-clock timestamp in the dataclass** — the log is a simulation record. Wall-clock time is irrelevant after the fact. Terminal output (controlled by OutputMode) may include wall-clock timestamps for real-time monitoring, but the persisted log uses simulation periods only. FLOCOMMENT: I don't agree. I think this is great for performance monitoring.
+
+FLOCOMMENT: The major decision that is missing for me in this explanation is: Why a df? To align it with our general simulation structure? makes sense? But we don't want to add single rows to dfs, right?
 
 ### 2. `OutputMode` enum
 
@@ -96,6 +104,8 @@ class OutputMode(str, Enum):
 **Replaces:** The `progress: bool` parameter on `BacktestRunner.run()`.
 
 **Interaction with log:** OutputMode controls what gets *printed*. The log always captures everything regardless of OutputMode. The log is the complete record; terminal output is a filtered view.
+
+FLOCOMMENT: Isn't this typically a verbosity level that we'd want to set? Like a summary is nice, but maybe we want a bit more? I guess that can be set with the level for logging? I'm a bit confused what should be shown. Should it be hooks that the strategy defines to get output when it wants. Like the examples already show how that can be done. So what will be left for the log in that case? Duplicating everything: useless. Warnings, sure! Errors, sure! Having an actual place where the strategy can write it's decsisions? Now were talking! Those should come as NOTICE, or INFO, right? Like when a strategy does something normal: INFO, when it has to course correct because something is out of whack: NOTICE.
 
 ### 3. Changes to `BacktestRunner`
 
@@ -209,11 +219,11 @@ def run(self, *, output: OutputMode = OutputMode.SILENT) -> BacktestResult:
 |------|----------|
 | `SILENT` | No terminal output. Equivalent to current `progress=False`. |
 | `SUMMARY` | After completion, prints one line: `Backtest complete: 252 periods in 1.34s (0 errors, 2 warnings)`. |
-| `PROGRESS` | tqdm progress bar. Equivalent to current `progress=True`. |
+| `PROGRESS` | tqdm progress bar. Equivalent to current `progress=True`. FLOCOMMENT: I think this should also auto show the SUMMARY. No reason why a human liking progress bars would not also want a single line summary at the end|
 
 **Implementation:** The `run()` method wraps the execution loop with mode-specific setup/teardown. The log is populated regardless of mode.
 
-### 4. Changes to `BacktestResult`
+### 4. Changes to `BacktestResult` FLOHERE
 
 ```python
 @dataclass

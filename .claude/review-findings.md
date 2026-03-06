@@ -24,8 +24,8 @@ break at scale and several correctness bugs.
 ### What needs work
 - Performance bottlenecks in hot path (O(n²) patterns)
 - Correctness bugs (DataFrame mutation, ignored parameter)
-- AI bloat (empty context manager, dead code)
-- Missing features for production use (specific lot identification, portfolio.total_value)
+- ~~AI bloat (empty context manager, dead code)~~ ✓ DONE (`06b1920`)
+- Missing features for production use (specific lot identification, ~~portfolio.total_value~~ ✓)
 - Examples not testable
 
 ---
@@ -84,12 +84,9 @@ def sell_lot(self, symbol: str, lot_id: int, quantity: float):
 
 ## P2 — Design issues & cleanup
 
-### P2-6: Silent failure swallowing in `execute_trades`
-**File:** `pyfolium/strategy.py:74-75`
-**Problem:** ValueError in buy/sell is caught and silently recorded as failed.
-AI-written strategies could make broken trades for entire backtest with no warning.
-**Fix:** Add `import warnings` and `warnings.warn(f"Trade failed: {symbol} {quantity}: {e}")`
-inside the except block. Keep recording in trades_df.
+### ~~P2-6: Silent failure swallowing in `execute_trades`~~ ✓ DONE
+Subsumed by structured logging (`c97e900`). `BacktestRunner` emits a summary WARNING
+at backtest end when `trades_df` has `success=False` rows.
 
 ### P2-7: `load_from_csv` silently creates zero income on column name mismatch
 **File:** `pyfolium/data.py:66-70`
@@ -117,7 +114,7 @@ Only create zeros when `income_column` is None (explicitly opted out).
 **Fix:**
 - Each `example_*()` function returns its result (BacktestResult or relevant values)
 - Keep print() for human readability but add return statements
-- Remove Example 7 (empty context manager — see P2-4)
+- ~~Remove Example 7 (empty context manager — see P2-4)~~ ✓ Old Example 7 removed; replaced with strategy logging demo.
 
 ### P4-2: Add test file for examples
 **File:** `tests/test_examples.py` (new)
@@ -141,11 +138,11 @@ May need `examples/__init__.py` or pytest `pythonpath` config update.
 ### P4-4: Audit `examples/backtest_runner_example.py` for correctness
 **File:** `examples/backtest_runner_example.py`
 **Problem:** Flagged during PR review as potentially unreliable AI-generated code.
-Needs verification that all 7 examples actually run successfully and produce
+Needs verification that all examples actually run successfully and produce
 correct results — not just plausible-looking code that compiles.
-**Fix:** Run the file end-to-end, fix any failures, remove Example 7 (context manager —
-see P2-4). Update all examples to use the new strategy-owns-start-conditions pattern
-once that's implemented.
+**Fix:** Run the file end-to-end, fix any failures. ~~Remove old Example 7 (context manager)~~ ✓ Done.
+~~Update all examples to use strategy-owns-start-conditions pattern~~ ✓ Done.
+~~Update examples for OutputMode API~~ ✓ Done (`444c88d`).
 
 ---
 
@@ -162,86 +159,17 @@ or fix the comment. For production, freezing is safer.
 Consider having `step()` return the trades list or a StepResult for introspection.
 Low priority — strategies can inspect `trades_df`.
 
-### Verbosity / observability model for different consumers
-**Files:** `pyfolium/simulation.py`, `pyfolium/strategy.py`
-**Problem:** The only output mode is tqdm (progress bar for human terminals). This doesn't
-serve the three real consumers:
+### ~~Verbosity / observability model for different consumers~~ ✓ DONE
+Implemented as `OutputMode(StrEnum)` in `pyfolium/logging.py` with `SILENT`, `SUMMARY`,
+`PROGRESS`. `STRUCTURED` was dropped — `result.log_df` serves the programmatic/LLM use case
+without a separate output mode. `RICH` mode (multi-bar for parallel optimization) planned as
+Phase 3. See `.claude/logging-spec.md` and `DESIGN.md` "Observability" section.
 
-1. **Human at terminal**: Wants progress bar + final summary. Current tqdm works.
-2. **LLM writing strategies**: Needs structured feedback — did trades execute? What failed?
-   What's my portfolio value? tqdm is noise. Silent ValueError swallowing (P2-6) hides the
-   signal the LLM actually needs.
-3. **Batch/CI runner**: Wants zero output on success, full diagnostics on failure.
-
-**Design:** Replace boolean `progress` with a verbosity/output enum:
-```python
-class OutputMode(str, Enum):
-    SILENT = "silent"      # No output. Errors in result object only.
-    SUMMARY = "summary"    # One-line summary at end (CI/batch).
-    PROGRESS = "progress"  # tqdm bar (human terminal).
-    STRUCTURED = "structured"  # Per-period structured log (LLM/programmatic).
-```
-
-`STRUCTURED` mode would yield/log per-period dicts:
-```python
-{
-    "period": "2024-01-15",
-    "trades_attempted": 3,
-    "trades_executed": 2,
-    "trades_failed": [{"symbol": "AAPL", "qty": 100, "reason": "insufficient cash"}],
-    "portfolio_value": 152340.50,
-    "cash": 12340.50,
-}
-```
-
-This replaces both P2-6 (trade failure warnings become structured data instead of
-`warnings.warn`) and the tqdm logic. It also makes BacktestResult more useful — the
-structured log becomes part of the result, queryable as a DataFrame.
-
-**Interaction with hooks:** The existing hook system (`period_start`, `period_end`) overlaps
-with this. Consider whether hooks should be the mechanism for structured output (hook that
-accumulates structured data) or whether structured output should be built-in and hooks
-remain for custom side effects only. Built-in is cleaner — hooks are user extension points,
-not the primary observability mechanism.
-
-**Implementation order:** After P2-6 (trade failure visibility) and P1-4 (error recovery),
-since this subsumes both.
-
-### Logging architecture: replace `.errors` with `.log`
-**Files:** `pyfolium/simulation.py` (BacktestRunner, BacktestResult)
-**Problem:** BacktestRunner has an `_errors` list of `(period, exception)` tuples. This is
-too narrow — it only captures exceptions, not warnings, trade failures, or general diagnostics.
-There's no structured way to inspect what happened during a backtest beyond the raw
-transaction log.
-
-**Design:**
-Replace `_errors` / `errors` with a `log` attribute that captures structured entries:
-
-```python
-@dataclass
-class LogEntry:
-    severity: str       # "DEBUG", "INFO", "WARNING", "ERROR"
-    period: pd.Period   # simulation period when event occurred
-    message: str        # human-readable description
-    data: dict | None   # optional structured data (trade details, etc.)
-```
-
-Key properties:
-- **Terminal output**: both wall-clock timestamp AND period/period timestamp on every line.
-  Example: `[14:32:05 | 2024-03-15] WARNING: Trade failed: AAPL qty=100 — price is NaN`
-- **Result data structure**: period numbers/timestamps, no wall-clock (irrelevant after the
-  fact). The log becomes a queryable DataFrame in `BacktestResult`.
-- **Standard severity levels**: DEBUG (trade details), INFO (period summaries), WARNING
-  (failed trades, negative cash), ERROR (exceptions caught by the runner).
-- **Subsumes current patterns**: `warnings.warn()` calls become log entries. `_errors` list
-  becomes `log.query("severity == 'ERROR'")`. tqdm progress can read from the log stream.
-- **Interaction with OutputMode/Verbosity**: The Verbosity enum (SILENT, SUMMARY, PROGRESS,
-  STRUCTURED) controls *what gets printed to terminal*. The log always captures everything
-  regardless of verbosity — it's the complete record, print settings are just filters.
-
-**Depends on:** P1-4 (error recovery design decision) — the logging system needs to know
-what severity to assign to recovered vs fatal errors.
-**Design doc update:** Consider adding a "Observability" section to `DESIGN.md` once implemented.
+### ~~Logging architecture: replace `.errors` with `.log`~~ ✓ DONE
+Implemented in `c97e900`. `BacktestRunner._log: list[LogEntry]` replaces `_errors`.
+`BacktestResult` exposes `.log`, `.log_df`, `.errors`, `.warnings`, `.success`.
+`BaseStrategy.log()` + drain pattern for strategy-authored entries.
+See `.claude/logging-spec.md` for full design rationale.
 
 ### `collect_income` recomputes `earliest_long_term_period` inside loop
 **File:** `pyfolium/core.py:582-585`
@@ -290,14 +218,14 @@ All examples updated to drop the 4-line boilerplate. 13 new tests added (5 in
 
 Recommended sequence:
 
-6. **P2-6** (trade failure warnings) — Small, important for AI strategies
+6. ~~**P2-6** (trade failure warnings)~~ ✓ DONE — Subsumed by structured logging; summary WARNING emitted at backtest end when `trades_df` has failures.
 7. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort
 9. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
 10. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
 11. **Tax/fee extensibility phase 1** — Extract tax methods from Portfolio into TaxConfig. Depends on P0-3.
-12. **P1-4** (error recovery) — Design decision needed first
-13. **Logging architecture** — Replace `.errors` with `.log`, structured entries. Depends on P1-4.
-14. **Verbosity/OutputMode** — Terminal filtering over the log. Subsumes P2-6 and tqdm logic.
+12. ~~**P1-4** (error recovery)~~ ✓ DONE — `strict` flag on `BacktestRunner`; lenient mode records errors in structured log and recovers.
+13. ~~**Logging architecture**~~ ✓ DONE — `pyfolium/logging.py` with `Severity`, `LogEntry`, `OutputMode`; `BacktestRunner._log` + `_emit()`; `BacktestResult.log`/`log_df`/`errors`/`warnings`/`success`; `BaseStrategy.log()` + drain pattern.
+14. ~~**Verbosity/OutputMode**~~ ✓ DONE — `OutputMode.SILENT`/`SUMMARY`/`PROGRESS` replaces `progress=True`. `RICH` mode planned (Phase 3, pending).
 16. **P4-*** (testable examples, audit existing) — After all API changes settle
 
 Each step should be a single reviewable commit.

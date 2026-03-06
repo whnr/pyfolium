@@ -1,8 +1,11 @@
 from abc import ABC, abstractmethod
+from time import monotonic
+from typing import Any
 
 import pandas as pd
 
 from .core import Portfolio
+from .logging import LogEntry, Severity
 
 
 class BaseStrategy(ABC):
@@ -47,6 +50,9 @@ class BaseStrategy(ABC):
         self.initial_cash = initial_cash
         self.start_period = start_period
 
+        # Structured log — drained by BacktestRunner after each step()
+        self._log: list[LogEntry] = []
+
         # Track all trade attempts and their execution
         self.trades_df = pd.DataFrame(
             index=pd.Index([], name="trade_id"),
@@ -58,6 +64,34 @@ class BaseStrategy(ABC):
                 "category",  # strategy-specific trade categorization
                 "success",
             ],
+        )
+
+    def log(
+        self,
+        severity: Severity,
+        message: str,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        """Record a log entry from within the strategy.
+
+        Call this from ``get_trades()`` to capture strategy reasoning,
+        debug information, or warnings. Entries are drained into the
+        runner's log after each ``step()`` call.
+
+        Args:
+            severity: Importance level of the log entry.
+            message: Human-readable description.
+            data: Optional structured payload (e.g. trade details).
+        """
+        self._log.append(
+            LogEntry(
+                severity=severity,
+                timestamp=monotonic(),
+                period=self.portfolio.current_period,
+                source="strategy",
+                message=message,
+                data=data,
+            )
         )
 
     @abstractmethod

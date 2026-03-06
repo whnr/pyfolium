@@ -17,6 +17,7 @@ from pyfolium.data import (
     load_from_csv,
     load_from_dataframe,
 )
+from pyfolium.logging import LogEntry, OutputMode, Severity
 from pyfolium.simulation import BacktestResult, BacktestRunner
 from pyfolium.strategy import BaseStrategy
 
@@ -39,6 +40,10 @@ __all__ = [
     # Data loaders
     "load_from_csv",
     "load_from_dataframe",
+    # Logging & observability
+    "Severity",
+    "LogEntry",
+    "OutputMode",
 ]
 
 __version__ = "0.1.0"

@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from pyfolium.core import Asset, AssetUniverse, Portfolio
+from pyfolium.logging import OutputMode
 from pyfolium.simulation import BacktestResult, BacktestRunner
 from pyfolium.strategy import BaseStrategy
 
@@ -220,7 +221,7 @@ def test_progress_bar_with_tqdm(portfolio, strategy):
     """Test running with progress bar enabled."""
     runner = BacktestRunner(portfolio, strategy)
     # Just test it doesn't crash - tqdm may or may not be available
-    result = runner.run(progress=True)
+    result = runner.run(output=OutputMode.PROGRESS)
     assert isinstance(result, BacktestResult)
 
 
@@ -246,9 +247,8 @@ def test_error_during_strategy_execution(asset_universe):
     strategy = FailingStrategy(portfolio)
     runner = BacktestRunner(portfolio, strategy, strict=False)
 
-    # Should complete despite error
-    with pytest.warns(UserWarning):
-        result = runner.run()
+    # Should complete despite error (errors go to structured log, not warnings)
+    result = runner.run()
 
     # Should have recorded the error
     assert len(result.errors) > 0
@@ -315,8 +315,7 @@ def test_lenient_mode_history_remains_consistent(asset_universe):
     strategy = FailOnPeriod2(portfolio)
     runner = BacktestRunner(portfolio, strategy, strict=False)
 
-    with pytest.warns(UserWarning):
-        result = runner.run()
+    result = runner.run()
 
     # History should have no NaN rows — the failed period must still be recorded
     assert not result.portfolio.history.isnull().all(axis=1).any(), (

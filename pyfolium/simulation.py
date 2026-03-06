@@ -4,17 +4,19 @@ Provides BacktestRunner for automating backtest execution with hooks,
 progress reporting, and error handling.
 """
 
-import warnings
 from collections import defaultdict
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
-from time import time
+from functools import cached_property
+from time import monotonic, time
+from typing import Any
 
 import pandas as pd
 from tqdm import tqdm
 
 from .core import Portfolio, PortfolioState
+from .logging import LogEntry, OutputMode, Severity
 from .strategy import BaseStrategy
 
 
@@ -35,7 +37,7 @@ class BacktestResult:
         end_period: Last period of the backtest
         total_periods: Number of periods simulated
         execution_time: Wall-clock time in seconds
-        errors: List of (period, exception) tuples for errors encountered
+        log: Structured log of all events during the backtest
     """
 
     portfolio: Portfolio
@@ -44,19 +46,58 @@ class BacktestResult:
     end_period: pd.Period
     total_periods: int
     execution_time: float
-    errors: list[tuple[pd.Period, Exception]] = field(default_factory=list)
+    log: list[LogEntry] = field(default_factory=list)
 
     def __repr__(self) -> str:
-        error_str = f", {len(self.errors)} errors" if self.errors else ""
+        error_count = len(self.errors)
+        error_str = f", {error_count} errors" if error_count else ""
         return (
             f"BacktestResult({self.start_period} to {self.end_period}, "
             f"{self.total_periods} periods, {self.execution_time:.2f}s{error_str})"
         )
 
+    @cached_property
+    def log_df(self) -> pd.DataFrame:
+        """Lazy DataFrame view of the log."""
+        if not self.log:
+            return pd.DataFrame(
+                columns=[
+                    "severity",
+                    "timestamp",
+                    "period",
+                    "source",
+                    "message",
+                    "data",
+                ]
+            )
+        return pd.DataFrame(
+            [
+                {
+                    "severity": e.severity.name,
+                    "timestamp": e.timestamp,
+                    "period": e.period,
+                    "source": e.source,
+                    "message": e.message,
+                    "data": e.data,
+                }
+                for e in self.log
+            ]
+        )
+
+    @property
+    def errors(self) -> list[LogEntry]:
+        """Log entries with severity >= ERROR."""
+        return [e for e in self.log if e.severity >= Severity.ERROR]
+
+    @property
+    def warnings(self) -> list[LogEntry]:
+        """Log entries with severity == WARNING."""
+        return [e for e in self.log if e.severity == Severity.WARNING]
+
     @property
     def success(self) -> bool:
         """Returns True if backtest completed without errors."""
-        return len(self.errors) == 0
+        return not any(e.severity >= Severity.ERROR for e in self.log)
 
 
 class BacktestRunner:
@@ -67,7 +108,7 @@ class BacktestRunner:
     period advancement.
 
     The runner enforces the Portfolio state machine:
-        COLLECT_INCOME → TRANSACT → DONE → advance_period → COLLECT_INCOME
+        COLLECT_INCOME -> TRANSACT -> DONE -> advance_period -> COLLECT_INCOME
 
     Hooks can be registered for the following events:
         - 'period_start': Called at the beginning of each period
@@ -184,7 +225,7 @@ class BacktestRunner:
 
         # State tracking
         self.current_period: pd.Period | None = None
-        self._errors: list[tuple[pd.Period, Exception]] = []
+        self._log: list[LogEntry] = []
         self._hooks: dict[str, list[Callable]] = defaultdict(list)
         self._periods_completed = 0
         self._strict = strict
@@ -204,6 +245,24 @@ class BacktestRunner:
         return (
             f"BacktestRunner(period {self._periods_completed}/{total_periods} | "
             f"strategy={strategy_name} | {status})"
+        )
+
+    def _emit(
+        self,
+        severity: Severity,
+        message: str,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        """Append a structured log entry from the runner."""
+        self._log.append(
+            LogEntry(
+                severity=severity,
+                timestamp=monotonic(),
+                period=self.portfolio.current_period,
+                source="runner",
+                message=message,
+                data=data,
+            )
         )
 
     def register_hook(self, event: str, callback: Callable) -> None:
@@ -236,9 +295,19 @@ class BacktestRunner:
         for callback in self._hooks[event]:
             try:
                 callback(self)
-            except Exception as e:
-                warnings.warn(
-                    f"Hook for event '{event}' raised exception: {e}", stacklevel=2
+            except Exception as exc:
+                self._log.append(
+                    LogEntry(
+                        severity=Severity.WARNING,
+                        timestamp=monotonic(),
+                        period=self.portfolio.current_period,
+                        source="hook",
+                        message=(
+                            f"Hook '{event}' raised "
+                            f"{exc.__class__.__name__}: {exc}"
+                        ),
+                        data={"event": event, "exception": exc},
+                    )
                 )
 
     def run_period(self) -> None:
@@ -283,6 +352,11 @@ class BacktestRunner:
                 self.portfolio.move_cash(cash_to_inject)
 
             self.strategy.step()
+
+            # Drain strategy log entries into the runner's log
+            self._log.extend(self.strategy._log)
+            self.strategy._log.clear()
+
             self.portfolio.update_history()
 
             self._trigger_hooks("period_end")
@@ -302,20 +376,21 @@ class BacktestRunner:
             # Let StopIteration pass through - it's how we exit the loop
             raise
         except Exception as e:
-            # Store error and trigger error hooks
-            self._errors.append((self.current_period, e))
+            # Store error in structured log
+            self._emit(
+                Severity.ERROR,
+                f"Exception during period {self.current_period}: {e}",
+                data={"exception": e},
+            )
             self._trigger_hooks("error")
 
             if self._strict:
                 raise
 
-            # Lenient mode: warn and attempt graceful state recovery.
-            # We call update_history() instead of forcing _states to DONE so that
-            # the period's actual portfolio state is still recorded in history.
-            warnings.warn(
-                f"Error in period {self.current_period}: {e}. "
-                f"Continuing with next period...",
-                stacklevel=2,
+            # Lenient mode: log warning and attempt graceful state recovery.
+            self._emit(
+                Severity.WARNING,
+                f"Lenient mode: skipped error in period {self.current_period}",
             )
 
             try:
@@ -343,17 +418,19 @@ class BacktestRunner:
                     f"Portfolio is in an inconsistent state."
                 ) from e
 
-    def run(self, *, progress: bool = False) -> BacktestResult:
+    def run(self, *, output: OutputMode = OutputMode.SILENT) -> BacktestResult:
         """Execute the complete backtest simulation.
 
         Args:
-            progress: If True, show progress bar (requires tqdm)
+            output: Controls terminal output. SILENT captures log only,
+                SUMMARY prints a one-line summary at end, PROGRESS shows a
+                tqdm progress bar plus summary.
 
         Returns:
             BacktestResult containing portfolio, strategy, and metadata
 
         Example:
-            result = runner.run(progress=True)
+            result = runner.run(output=OutputMode.PROGRESS)
             print(f"Completed {result.total_periods} periods in "
                   f"{result.execution_time:.2f}s")
         """
@@ -367,7 +444,7 @@ class BacktestRunner:
         self._trigger_hooks("backtest_start")
 
         # Setup progress bar if requested
-        if progress:
+        if output == OutputMode.PROGRESS:
             pbar = tqdm(
                 total=total_periods,
                 desc="Running backtest",
@@ -396,6 +473,20 @@ class BacktestRunner:
         # Trigger end hooks
         self._trigger_hooks("backtest_end")
 
+        # Check for trade failures and emit summary warning
+        if hasattr(self.strategy, "trades_df") and len(self.strategy.trades_df) > 0:
+            failed = self.strategy.trades_df[
+                self.strategy.trades_df["success"] == False  # noqa: E712
+            ]
+            if len(failed) > 0:
+                total_trades = len(self.strategy.trades_df)
+                self._emit(
+                    Severity.WARNING,
+                    f"Backtest completed with {len(failed)}/{total_trades} "
+                    f"failed trades in trades_df",
+                    data={"failed_count": len(failed), "total_count": total_trades},
+                )
+
         # Create result
         result = BacktestResult(
             portfolio=self.portfolio,
@@ -404,7 +495,17 @@ class BacktestRunner:
             end_period=self.end_period,
             total_periods=self._periods_completed,
             execution_time=execution_time,
-            errors=self._errors.copy(),
+            log=self._log.copy(),
         )
+
+        # Print summary if requested
+        if output in (OutputMode.SUMMARY, OutputMode.PROGRESS):
+            error_count = len(result.errors)
+            warning_count = len(result.warnings)
+            print(
+                f"Backtest: {result.total_periods} periods, "
+                f"{execution_time:.2f}s, "
+                f"{error_count} errors, {warning_count} warnings"
+            )
 
         return result

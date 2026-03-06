@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from pyfolium.core import Asset, AssetUniverse, Portfolio
+from pyfolium.logging import LogEntry, Severity
 from pyfolium.strategy import BaseStrategy
 
 
@@ -157,3 +158,72 @@ def test_strategy_parameters_unaffected_by_new_params(portfolio):
     assert strategy.parameters == {"alpha": 0.5}
     assert strategy.initial_cash == 10000.0
     assert strategy.start_period == period
+
+
+# ---------------------------------------------------------------------------
+# Strategy logging
+# ---------------------------------------------------------------------------
+
+
+def test_strategy_log_starts_empty(strategy):
+    """Strategy _log is empty on initialization."""
+    assert strategy._log == []
+
+
+def test_strategy_log_creates_entry_with_correct_source(strategy):
+    """log() creates a LogEntry with source='strategy'."""
+    strategy.log(Severity.INFO, "test message")
+
+    assert len(strategy._log) == 1
+    entry = strategy._log[0]
+    assert isinstance(entry, LogEntry)
+    assert entry.source == "strategy"
+    assert entry.severity == Severity.INFO
+    assert entry.message == "test message"
+    assert entry.data is None
+
+
+def test_strategy_log_with_data(strategy):
+    """log() attaches optional data dict."""
+    strategy.log(Severity.DEBUG, "details", data={"key": "value"})
+
+    entry = strategy._log[0]
+    assert entry.data == {"key": "value"}
+
+
+def test_strategy_log_uses_current_period(strategy):
+    """log() records the portfolio's current_period."""
+    strategy.log(Severity.WARNING, "watch out")
+
+    entry = strategy._log[0]
+    assert entry.period == strategy.portfolio.current_period
+
+
+def test_strategy_log_has_monotonic_timestamp(strategy):
+    """log() entries have increasing timestamps."""
+    strategy.log(Severity.INFO, "first")
+    strategy.log(Severity.INFO, "second")
+
+    assert strategy._log[1].timestamp >= strategy._log[0].timestamp
+
+
+def test_strategy_log_accumulates_multiple_entries(strategy):
+    """Multiple log() calls accumulate in _log."""
+    strategy.log(Severity.DEBUG, "a")
+    strategy.log(Severity.INFO, "b")
+    strategy.log(Severity.WARNING, "c")
+
+    assert len(strategy._log) == 3
+    assert [e.severity for e in strategy._log] == [
+        Severity.DEBUG,
+        Severity.INFO,
+        Severity.WARNING,
+    ]
+
+
+def test_strategy_log_clearable(strategy):
+    """_log can be cleared (as the runner does after draining)."""
+    strategy.log(Severity.INFO, "will be drained")
+    strategy._log.clear()
+
+    assert strategy._log == []

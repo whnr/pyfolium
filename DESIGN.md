@@ -269,7 +269,7 @@ This keeps strategies decoupled from the runner — they don't need a reference 
 - **SUMMARY** — one-line summary at end (periods, time, error/warning counts).
 - **PROGRESS** — tqdm progress bar during execution plus summary.
 
-This replaces the old `progress=True` boolean with a richer, extensible enum.
+The enum is extensible — a future `RICH` mode can add multi-bar displays without changing the interface.
 
 ## Data Flow Summary
 

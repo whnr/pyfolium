@@ -114,7 +114,7 @@ Only create zeros when `income_column` is None (explicitly opted out).
 **Fix:**
 - Each `example_*()` function returns its result (BacktestResult or relevant values)
 - Keep print() for human readability but add return statements
-- ~~Remove Example 7 (empty context manager — see P2-4)~~ ✓ Old Example 7 removed; replaced with strategy logging demo.
+- ~~Remove Example 7 (empty context manager — see P2-4)~~ ✓ Done; Example 7 is now the strategy logging demo.
 
 ### P4-2: Add test file for examples
 **File:** `tests/test_examples.py` (new)
@@ -140,7 +140,7 @@ May need `examples/__init__.py` or pytest `pythonpath` config update.
 **Problem:** Flagged during PR review as potentially unreliable AI-generated code.
 Needs verification that all examples actually run successfully and produce
 correct results — not just plausible-looking code that compiles.
-**Fix:** Run the file end-to-end, fix any failures. ~~Remove old Example 7 (context manager)~~ ✓ Done.
+**Fix:** Run the file end-to-end, fix any failures. ~~Remove context manager example~~ ✓ Done.
 ~~Update all examples to use strategy-owns-start-conditions pattern~~ ✓ Done.
 ~~Update examples for OutputMode API~~ ✓ Done (`444c88d`).
 
@@ -165,8 +165,8 @@ Implemented as `OutputMode(StrEnum)` in `pyfolium/logging.py` with `SILENT`, `SU
 without a separate output mode. `RICH` mode (multi-bar for parallel optimization) planned as
 Phase 3. See `.claude/logging-spec.md` and `DESIGN.md` "Observability" section.
 
-### ~~Logging architecture: replace `.errors` with `.log`~~ ✓ DONE
-Implemented in `c97e900`. `BacktestRunner._log: list[LogEntry]` replaces `_errors`.
+### ~~Logging architecture~~ ✓ DONE
+Implemented in `c97e900`. `BacktestRunner._log: list[LogEntry]` with structured entries.
 `BacktestResult` exposes `.log`, `.log_df`, `.errors`, `.warnings`, `.success`.
 `BaseStrategy.log()` + drain pattern for strategy-authored entries.
 See `.claude/logging-spec.md` for full design rationale.
@@ -225,7 +225,7 @@ Recommended sequence:
 11. **Tax/fee extensibility phase 1** — Extract tax methods from Portfolio into TaxConfig. Depends on P0-3.
 12. ~~**P1-4** (error recovery)~~ ✓ DONE — `strict` flag on `BacktestRunner`; lenient mode records errors in structured log and recovers.
 13. ~~**Logging architecture**~~ ✓ DONE — `pyfolium/logging.py` with `Severity`, `LogEntry`, `OutputMode`; `BacktestRunner._log` + `_emit()`; `BacktestResult.log`/`log_df`/`errors`/`warnings`/`success`; `BaseStrategy.log()` + drain pattern.
-14. ~~**Verbosity/OutputMode**~~ ✓ DONE — `OutputMode.SILENT`/`SUMMARY`/`PROGRESS` replaces `progress=True`. `RICH` mode planned (Phase 3, pending).
+14. ~~**Verbosity/OutputMode**~~ ✓ DONE — `OutputMode.SILENT`/`SUMMARY`/`PROGRESS`. `RICH` mode planned (Phase 3, pending).
 16. **P4-*** (testable examples, audit existing) — After all API changes settle
 
 Each step should be a single reviewable commit.

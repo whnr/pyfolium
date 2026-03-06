@@ -100,50 +100,15 @@ for _ in range(10):
 
 ## Logging & Observability
 
-BacktestRunner captures structured log entries during execution. Control terminal output with `OutputMode`:
+`BacktestRunner` captures structured log entries during execution. Control terminal output with `OutputMode`:
 
 ```python
-from pyfolium import OutputMode
-
-# Silent (default) — log captured in result only
-result = runner.run(output=OutputMode.SILENT)
-
-# Summary — one-line summary printed at end
-result = runner.run(output=OutputMode.SUMMARY)
-
-# Progress — tqdm bar + summary
-result = runner.run(output=OutputMode.PROGRESS)
+result = runner.run(output=OutputMode.SILENT)    # default — log in result only
+result = runner.run(output=OutputMode.SUMMARY)   # one-line summary at end
+result = runner.run(output=OutputMode.PROGRESS)  # tqdm bar + summary
 ```
 
-Inspect the log after a run:
-
-```python
-# All log entries
-for entry in result.log:
-    print(f"[{entry.severity.name}] {entry.period}: {entry.message}")
-
-# Convenience filters
-result.errors     # list[LogEntry] with severity >= ERROR
-result.warnings   # list[LogEntry] with severity == WARNING
-result.success    # True if no errors
-
-# DataFrame view for analysis
-result.log_df     # columns: severity, timestamp, period, source, message, data
-```
-
-Strategies can emit log entries from `get_trades()`:
-
-```python
-from pyfolium import Severity
-
-class MyStrategy(BaseStrategy):
-    def get_trades(self):
-        if some_condition:
-            self.log(Severity.WARNING, "Low liquidity", data={"spread": 0.05})
-        return [('AAPL', 10)]
-```
-
-Strategy log entries are automatically drained into the runner's log after each period, with `source="strategy"`.
+After a run, inspect `result.log` (list of `LogEntry`), `result.log_df` (DataFrame view), `result.errors`, `result.warnings`, and `result.success`. Strategies can emit entries via `self.log(Severity.WARNING, "message")` inside `get_trades()`.
 
 ## Strategy Comparison
 

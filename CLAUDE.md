@@ -168,7 +168,7 @@ strategies/         # User-defined strategies (empty, for users to populate)
 ## Current State
 
 Recent features:
-- **Structured logging**: `Severity`, `LogEntry`, `OutputMode` in `pyfolium/logging.py`; `BacktestRunner` captures structured log entries (replacing ad-hoc `warnings.warn`); `BaseStrategy.log()` lets strategies emit entries drained by the runner; `BacktestResult` exposes `.log`, `.log_df`, `.errors`, `.warnings`, `.success`; `OutputMode` enum (`SILENT`/`SUMMARY`/`PROGRESS`) replaces `progress=True`
+- **Structured logging**: `Severity`, `LogEntry`, `OutputMode` in `pyfolium/logging.py`; `BacktestRunner` captures structured log entries; `BaseStrategy.log()` lets strategies emit entries drained by the runner; `BacktestResult` exposes `.log`, `.log_df`, `.errors`, `.warnings`, `.success`; `OutputMode` enum (`SILENT`/`SUMMARY`/`PROGRESS`) controls terminal output
 - **Strategy start conditions**: `BaseStrategy` accepts `initial_cash` and `start_period` keyword args; `BacktestRunner` injects cash on the first active period and resolves start period with precedence: runner arg > `strategy.start_period` > `portfolio.current_period`
 - **Data gaps handling**: Asset rejects NaN prices at construction; trades on out-of-range periods fail gracefully via `success=False` in `trades_df`; NaN income treated as zero
 - **BacktestRunner**: Automated simulation with hooks and progress reporting

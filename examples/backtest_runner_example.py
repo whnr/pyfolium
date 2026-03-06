@@ -7,7 +7,15 @@ BacktestRunner class for automating portfolio simulations.
 import numpy as np
 import pandas as pd
 
-from pyfolium import Asset, AssetUniverse, BacktestRunner, BaseStrategy, Portfolio
+from pyfolium import (
+    Asset,
+    AssetUniverse,
+    BacktestRunner,
+    BaseStrategy,
+    OutputMode,
+    Portfolio,
+    Severity,
+)
 
 
 # =============================================================================
@@ -151,9 +159,9 @@ def example_simple():
 
 
 def example_with_progress():
-    """Run backtest with progress bar (requires tqdm)."""
+    """Run backtest with different output modes."""
     print("\n" + "=" * 70)
-    print("Example 2: With Progress Bar")
+    print("Example 2: Output Modes")
     print("=" * 70)
 
     universe = create_sample_universe()
@@ -162,9 +170,14 @@ def example_with_progress():
     strategy = MonthlyRebalanceStrategy(portfolio, initial_cash=100000)
 
     runner = BacktestRunner(portfolio, strategy)
-    result = runner.run(progress=True)  # Shows progress bar!
+    # OutputMode.PROGRESS shows a tqdm bar + summary line
+    result = runner.run(output=OutputMode.PROGRESS)
 
     print(f"\nFinal portfolio value: ${result.portfolio.total_value:,.2f}")
+
+    # Other modes:
+    # runner.run(output=OutputMode.SILENT)   — no terminal output (default)
+    # runner.run(output=OutputMode.SUMMARY)  — one-line summary at end
 
 
 # =============================================================================
@@ -311,6 +324,66 @@ def example_custom_period_range():
 
 
 # =============================================================================
+# Example 7: Strategy Logging & Result Inspection
+# =============================================================================
+
+
+class LoggingStrategy(BaseStrategy):
+    """Strategy that emits log entries for observability."""
+
+    def __init__(self, portfolio, **kwargs):
+        super().__init__(portfolio, parameters={}, **kwargs)
+        self.invested = False
+
+    def get_trades(self):
+        if not self.invested and self.portfolio.cash >= 10000:
+            self.invested = True
+            self.log(
+                Severity.INFO,
+                "Investing initial capital",
+                data={"cash": self.portfolio.cash},
+            )
+            return [("STOCK_A", 50)]
+
+        if self.invested:
+            self.log(Severity.DEBUG, "Holding position")
+
+        return []
+
+
+def example_logging():
+    """Demonstrate structured logging from strategies and result inspection."""
+    print("\n" + "=" * 70)
+    print("Example 7: Strategy Logging & Result Inspection")
+    print("=" * 70)
+
+    universe = create_sample_universe()
+    portfolio = Portfolio(universe)
+
+    strategy = LoggingStrategy(portfolio, initial_cash=50000)
+    runner = BacktestRunner(portfolio, strategy)
+    result = runner.run(output=OutputMode.SUMMARY)
+
+    # Inspect the log
+    print(f"\nTotal log entries: {len(result.log)}")
+    print(f"  Errors:   {len(result.errors)}")
+    print(f"  Warnings: {len(result.warnings)}")
+    print(f"  Success:  {result.success}")
+
+    # Show first few strategy entries
+    strategy_entries = [e for e in result.log if e.source == "strategy"]
+    print(f"\nStrategy log entries: {len(strategy_entries)}")
+    for entry in strategy_entries[:3]:
+        print(f"  [{entry.severity.name}] {entry.period}: {entry.message}")
+
+    # DataFrame view for analysis
+    df = result.log_df
+    if not df.empty:
+        print(f"\nlog_df shape: {df.shape}")
+        print(f"Columns: {list(df.columns)}")
+
+
+# =============================================================================
 # Run all examples
 # =============================================================================
 
@@ -321,6 +394,7 @@ if __name__ == "__main__":
     example_step_by_step()
     example_compare_strategies()
     example_custom_period_range()
+    example_logging()
 
     print("\n" + "=" * 70)
     print("All examples completed!")

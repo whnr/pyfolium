@@ -238,6 +238,39 @@ The BacktestRunner automates the period loop and provides extension points via h
 
 The runner supports step-by-step execution via `run_period()` for debugging and interactive use.
 
+## Observability: Scoped Logs, Not stdlib Logging
+
+Backtest observability uses **scoped, structured logs** rather than Python's stdlib `logging` module. Every `BacktestRunner` maintains its own `_log: list[LogEntry]`, and each `LogEntry` is a frozen dataclass with severity, timestamp, period, source, message, and optional data payload.
+
+### Why not stdlib logging?
+
+stdlib `logging` is designed for long-running processes where log output goes to files, consoles, or monitoring systems. Backtests are different:
+
+1. **Isolation** — running 400 backtests in parallel would produce interleaved log output from a global logger. Scoped logs keep each backtest's events in its own list, queryable after completion.
+2. **Structured data** — `LogEntry` carries typed fields (severity as `IntEnum`, period as `pd.Period`, source as string). stdlib log records require string formatting and parsing to recover structure.
+3. **Post-hoc analysis** — `result.log_df` gives a DataFrame of all events, filterable by severity, source, or period. This is the natural interface for a library that outputs DataFrames.
+
+### The drain pattern
+
+Strategies emit log entries via `self.log(severity, message, data)`, which appends to `strategy._log`. After each `strategy.step()` call, the runner drains the strategy's log:
+
+```python
+self._log.extend(self.strategy._log)
+self.strategy._log.clear()
+```
+
+This keeps strategies decoupled from the runner — they don't need a reference to the runner's log, and they're testable in isolation. The `source` field on each entry (`"runner"`, `"strategy"`, `"hook"`) lets consumers filter by origin.
+
+### OutputMode
+
+`OutputMode` controls terminal output during `run()`:
+
+- **SILENT** — no terminal output; log captured in result only.
+- **SUMMARY** — one-line summary at end (periods, time, error/warning counts).
+- **PROGRESS** — tqdm progress bar during execution plus summary.
+
+This replaces the old `progress=True` boolean with a richer, extensible enum.
+
 ## Data Flow Summary
 
 ```

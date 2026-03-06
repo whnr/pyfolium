@@ -34,6 +34,7 @@ pre-commit install
 ```python
 import pandas as pd
 from pyfolium import Asset, AssetUniverse, Portfolio, BacktestRunner, BaseStrategy
+from pyfolium import OutputMode
 
 # 1. Create asset universe
 universe = AssetUniverse(data_frequency='D')
@@ -62,7 +63,7 @@ class BuyAndHold(BaseStrategy):
 # 4. Create portfolio and run backtest — no manual cash seeding required
 portfolio = Portfolio(universe)
 runner = BacktestRunner(portfolio, BuyAndHold(portfolio))
-result = runner.run(progress=True)
+result = runner.run(output=OutputMode.PROGRESS)
 
 print(f"Final cash: ${result.portfolio.cash:,.2f}")
 print(f"Execution time: {result.execution_time:.2f}s")
@@ -78,7 +79,7 @@ runner = BacktestRunner(portfolio, strategy)
 result = runner.run()
 
 # With progress bar
-result = runner.run(progress=True)
+result = runner.run(output=OutputMode.PROGRESS)
 
 # Custom hooks (callback receives the runner instance)
 def log_value(runner):
@@ -96,6 +97,53 @@ for _ in range(10):
 ```
 
 **Available Hooks**: `period_start`, `period_end`, `backtest_start`, `backtest_end`, `error`
+
+## Logging & Observability
+
+BacktestRunner captures structured log entries during execution. Control terminal output with `OutputMode`:
+
+```python
+from pyfolium import OutputMode
+
+# Silent (default) — log captured in result only
+result = runner.run(output=OutputMode.SILENT)
+
+# Summary — one-line summary printed at end
+result = runner.run(output=OutputMode.SUMMARY)
+
+# Progress — tqdm bar + summary
+result = runner.run(output=OutputMode.PROGRESS)
+```
+
+Inspect the log after a run:
+
+```python
+# All log entries
+for entry in result.log:
+    print(f"[{entry.severity.name}] {entry.period}: {entry.message}")
+
+# Convenience filters
+result.errors     # list[LogEntry] with severity >= ERROR
+result.warnings   # list[LogEntry] with severity == WARNING
+result.success    # True if no errors
+
+# DataFrame view for analysis
+result.log_df     # columns: severity, timestamp, period, source, message, data
+```
+
+Strategies can emit log entries from `get_trades()`:
+
+```python
+from pyfolium import Severity
+
+class MyStrategy(BaseStrategy):
+    def get_trades(self):
+        if some_condition:
+            self.log(Severity.WARNING, "Low liquidity", data={"spread": 0.05})
+        return [('AAPL', 10)]
+```
+
+Strategy log entries are automatically drained into the runner's log after each period, with `source="strategy"`.
 
 ## Strategy Comparison
 
@@ -201,6 +249,7 @@ pyfolium/
 ├── core.py         # Portfolio, Asset, AssetUniverse, configs
 ├── strategy.py     # BaseStrategy ABC
 ├── simulation.py   # BacktestRunner, BacktestResult
+├── logging.py      # Severity, LogEntry, OutputMode
 └── data.py         # Data loading utilities
 
 tests/
@@ -236,8 +285,9 @@ COLLECT_INCOME → TRANSACT → DONE → advance_period() → COLLECT_INCOME
 
 See `examples/backtest_runner_example.py` for comprehensive examples including:
 - Simple usage
-- Progress reporting
+- Output modes (silent, summary, progress bar)
 - Custom hooks
+- Strategy logging
 - Strategy comparison
 - Step-by-step execution
 

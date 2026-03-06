@@ -303,8 +303,7 @@ class BacktestRunner:
                         period=self.portfolio.current_period,
                         source="hook",
                         message=(
-                            f"Hook '{event}' raised "
-                            f"{exc.__class__.__name__}: {exc}"
+                            f"Hook '{event}' raised {exc.__class__.__name__}: {exc}"
                         ),
                         data={"event": event, "exception": exc},
                     )

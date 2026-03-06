@@ -81,6 +81,7 @@ This state machine is enforced via `PortfolioState` enum to prevent operations i
 **BaseStrategy** (`pyfolium/strategy.py`): Abstract class for trading strategies
 - Subclasses must implement `get_trades()` returning list of (symbol, quantity) tuples
 - `step()` method gets trades and executes them via portfolio
+- `log(severity, message, data)` emits structured `LogEntry` to `_log`; drained by runner after each step
 - Tracks all trade attempts (successful and failed) in `trades_df`
 - Parameters stored in `parameters` dict for reproducibility
 - `initial_cash`: optional cash deposited via `move_cash()` at the first active period (keyword-only, `None` by default)
@@ -89,10 +90,11 @@ This state machine is enforced via `PortfolioState` enum to prevent operations i
 **BacktestRunner** (`pyfolium/simulation.py`): Automated simulation orchestration
 - Automates the period-by-period execution loop
 - Supports custom hooks: `period_start`, `period_end`, `backtest_start`, `backtest_end`, `error`
-- Optional progress bars via `tqdm`
+- Structured logging via `_log: list[LogEntry]`; `_emit()` creates runner entries, strategy entries drained after each step
+- `run(output=OutputMode.SILENT)` controls terminal output: `SILENT`, `SUMMARY`, `PROGRESS`
 - Step-by-step execution with `run_period()` for debugging
-- Error handling with warnings and error storage (continues on error)
-- Returns `BacktestResult` with portfolio, strategy, and metadata
+- Lenient mode (`strict=False`) records errors/warnings in log and continues
+- Returns `BacktestResult` with portfolio, strategy, metadata, and `log`
 
 ### Tax System
 
@@ -146,6 +148,7 @@ pyfolium/
 ├── core.py         # Asset, AssetUniverse, Portfolio, TaxConfig, FeeConfig
 ├── strategy.py     # BaseStrategy ABC
 ├── simulation.py   # BacktestRunner, BacktestResult
+├── logging.py      # Severity, LogEntry, OutputMode
 └── data.py         # Data loading utilities
 
 tests/
@@ -153,6 +156,7 @@ tests/
 ├── core/           # Tests for core components
 ├── strategy/       # Tests for strategy system
 ├── simulation/     # Tests for BacktestRunner
+├── test_logging.py # Tests for logging types
 └── test_data.py    # Tests for data loading
 
 examples/
@@ -164,6 +168,7 @@ strategies/         # User-defined strategies (empty, for users to populate)
 ## Current State
 
 Recent features:
+- **Structured logging**: `Severity`, `LogEntry`, `OutputMode` in `pyfolium/logging.py`; `BacktestRunner` captures structured log entries (replacing ad-hoc `warnings.warn`); `BaseStrategy.log()` lets strategies emit entries drained by the runner; `BacktestResult` exposes `.log`, `.log_df`, `.errors`, `.warnings`, `.success`; `OutputMode` enum (`SILENT`/`SUMMARY`/`PROGRESS`) replaces `progress=True`
 - **Strategy start conditions**: `BaseStrategy` accepts `initial_cash` and `start_period` keyword args; `BacktestRunner` injects cash on the first active period and resolves start period with precedence: runner arg > `strategy.start_period` > `portfolio.current_period`
 - **Data gaps handling**: Asset rejects NaN prices at construction; trades on out-of-range periods fail gracefully via `success=False` in `trades_df`; NaN income treated as zero
 - **BacktestRunner**: Automated simulation with hooks and progress reporting

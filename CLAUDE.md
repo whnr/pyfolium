@@ -174,7 +174,7 @@ Recent features:
 - **BacktestRunner**: Automated simulation with hooks and progress reporting
 - **Portfolio.clone()**: Deep copy for strategy comparison and optimization
 - **Pydantic validation**: TaxConfig and FeeConfig with automatic validation
-- **Data loading**: load_from_csv and load_from_dataframe utilities
+- **Data loading**: `load_from_csv` and `load_from_dataframe` utilities with explicit `income_column` (defaults to `None`; raises `ValueError` when an explicitly named column is missing) and `min_density` sanity check (default `0.5`) that catches frequency mismatches like monthly data loaded as daily
 - **Comprehensive examples**: 7 usage patterns in examples/backtest_runner_example.py
 
 See `.claude/review-findings.md` for the full architecture review and action plan.

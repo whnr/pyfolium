@@ -9,28 +9,144 @@ from pathlib import Path
 import pandas as pd
 
 
+def _check_density(
+    data: pd.DataFrame,
+    frequency: str,
+    min_density: float | None,
+) -> None:
+    """Validate that data density is consistent with the requested frequency.
+
+    Computes the ratio of actual data points to the number of periods that
+    would exist in a gapless range at the given frequency. A low ratio
+    indicates the data was likely recorded at a coarser frequency than
+    requested (e.g., monthly data loaded as daily).
+
+    Args:
+        data: DataFrame with a PeriodIndex (after dedup).
+        frequency: Pandas period frequency string.
+        min_density: Minimum acceptable density ratio (0.0–1.0).
+            None disables the check.
+
+    Raises:
+        ValueError: If density falls below *min_density*.
+    """
+    if min_density is None:
+        return
+    if len(data) < 3:
+        return
+
+    first_period = data.index.min()
+    last_period = data.index.max()
+    expected_range = pd.period_range(
+        start=first_period, end=last_period, freq=frequency
+    )
+    expected_count = len(expected_range)
+
+    if expected_count == 0:
+        return
+
+    density = len(data) / expected_count
+
+    if density < min_density:
+        raise ValueError(
+            f"Data density too low: {density:.1%} of expected periods present "
+            f"(threshold: {min_density:.0%}). The data has {len(data)} observations "
+            f"spanning {expected_count} {frequency}-frequency periods "
+            f"({first_period} to {last_period}). "
+            f"This usually means the data frequency doesn't match the requested "
+            f"frequency '{frequency}'. Set min_density=None to disable this check."
+        )
+
+
+def _build_asset_dataframe(
+    data: pd.DataFrame,
+    frequency: str,
+    price_column: str,
+    income_column: str | None,
+    min_density: float | None,
+) -> pd.DataFrame:
+    """Build a normalised asset DataFrame from raw input.
+
+    Validates columns, renames to canonical names ("price", "income"),
+    removes duplicate periods, and runs the density sanity check.
+
+    Args:
+        data: DataFrame with a PeriodIndex.
+        frequency: Pandas period frequency string.
+        price_column: Name of the column containing prices.
+        income_column: Name of the column containing income/dividends.
+            None to exclude income data.
+        min_density: Minimum acceptable data density (0.0–1.0).
+            None disables the check.
+
+    Returns:
+        DataFrame with columns "price" (and "income" if requested).
+
+    Raises:
+        ValueError: If *price_column* or an explicitly provided
+            *income_column* is missing from *data*, or if density is
+            too low.
+    """
+    if price_column not in data.columns:
+        raise ValueError(
+            f"Price column '{price_column}' not found. "
+            f"Available columns: {list(data.columns)}"
+        )
+
+    result_data: dict[str, pd.Series] = {"price": data[price_column]}
+
+    if income_column is not None:
+        if income_column not in data.columns:
+            raise ValueError(
+                f"Income column '{income_column}' not found. "
+                f"Available columns: {list(data.columns)}"
+            )
+        result_data["income"] = data[income_column].fillna(0.0)
+
+    result = pd.DataFrame(result_data)
+
+    # Remove any duplicate periods (keep last)
+    result = result[~result.index.duplicated(keep="last")]
+
+    _check_density(result, frequency, min_density)
+
+    return result
+
+
 def load_from_csv(
     file_path: str | Path,
     frequency: str,
     date_column: str = "Date",
     price_column: str = "Close",
-    income_column: str | None = "Dividend",
+    income_column: str | None = None,
+    min_density: float | None = 0.5,
 ) -> pd.DataFrame:
     """Load asset data from a CSV file.
 
     Args:
-        file_path: Path to CSV file
-        frequency: Data frequency as pandas period alias (e.g., "D", "W", "M")
-        date_column: Name of column containing dates
-        price_column: Name of column containing price data
-        income_column: Name of column containing income/dividend data
-                       Set to None to exclude income data
+        file_path: Path to CSV file.
+        frequency: Data frequency as pandas period alias (e.g., "D", "W", "M").
+        date_column: Name of column containing dates.
+        price_column: Name of column containing price data.
+        income_column: Name of column containing income/dividend data.
+            Must exist in the CSV when provided. Set to None (default) to
+            exclude income data.
+        min_density: Minimum ratio of actual data points to expected periods
+            in the date range (0.0–1.0). Catches frequency mismatches like
+            monthly data loaded as daily. Set to None to disable.
 
     Returns:
-        DataFrame with PeriodIndex and columns: "price" (and "income" if requested)
+        DataFrame with PeriodIndex and columns: "price" (and "income" if
+        *income_column* is provided).
+
+    Raises:
+        FileNotFoundError: If *file_path* does not exist.
+        ValueError: If *price_column* or *income_column* is missing from the
+            CSV, or if data density is below *min_density*.
 
     Example:
-        >>> df = load_from_csv("data/AAPL.csv", frequency="D")
+        >>> df = load_from_csv("data/AAPL.csv", frequency="D",
+        ...                    income_column="Dividend")
         >>> df.head()
                     price  income
         2020-01-01  73.41    0.00
@@ -41,8 +157,7 @@ def load_from_csv(
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
-    # Read CSV
-    data = pd.read_csv(file_path, parse_dates=[date_column])
+    data = pd.read_csv(file_path)
 
     if data.empty:
         raise ValueError(f"CSV file is empty: {file_path}")
@@ -52,29 +167,9 @@ def load_from_csv(
     data.index = data[date_column].dt.to_period(frequency)
     data = data.drop(columns=[date_column])
 
-    # Select and rename columns
-    result_data = {}
-
-    if price_column not in data.columns:
-        raise ValueError(
-            f"Price column '{price_column}' not found. "
-            f"Available columns: {list(data.columns)}"
-        )
-    result_data["price"] = data[price_column]
-
-    if income_column is not None:
-        if income_column in data.columns:
-            result_data["income"] = data[income_column].fillna(0.0)
-        else:
-            # If income column not found, create zeros
-            result_data["income"] = pd.Series(0.0, index=data.index)
-
-    result = pd.DataFrame(result_data)
-
-    # Remove any duplicate periods (keep last)
-    result = result[~result.index.duplicated(keep="last")]
-
-    return result
+    return _build_asset_dataframe(
+        data, frequency, price_column, income_column, min_density
+    )
 
 
 def load_from_dataframe(
@@ -82,7 +177,8 @@ def load_from_dataframe(
     frequency: str,
     date_column: str | None = None,
     price_column: str = "price",
-    income_column: str | None = "income",
+    income_column: str | None = None,
+    min_density: float | None = 0.5,
 ) -> pd.DataFrame:
     """Prepare a pandas DataFrame for use with Pyfolium Assets.
 
@@ -91,15 +187,24 @@ def load_from_dataframe(
     - Columns named "price" and optionally "income"
 
     Args:
-        data: Input DataFrame with date index or date column
-        frequency: Data frequency as pandas period alias (e.g., "D", "W", "M")
-        date_column: Name of column containing dates (if not using index)
-        price_column: Name of column containing price data
-        income_column: Name of column containing income/dividend data
-                       Set to None to exclude income data
+        data: Input DataFrame with date index or date column.
+        frequency: Data frequency as pandas period alias (e.g., "D", "W", "M").
+        date_column: Name of column containing dates (if not using index).
+        price_column: Name of column containing price data.
+        income_column: Name of column containing income/dividend data.
+            Must exist in the DataFrame when provided. Set to None (default)
+            to exclude income data.
+        min_density: Minimum ratio of actual data points to expected periods
+            in the date range (0.0–1.0). Catches frequency mismatches like
+            monthly data loaded as daily. Set to None to disable.
 
     Returns:
-        DataFrame with PeriodIndex and columns: "price" (and "income" if requested)
+        DataFrame with PeriodIndex and columns: "price" (and "income" if
+        *income_column* is provided).
+
+    Raises:
+        ValueError: If *date_column*, *price_column*, or *income_column* is
+            missing, or if data density is below *min_density*.
 
     Example:
         >>> import pandas as pd
@@ -125,26 +230,6 @@ def load_from_dataframe(
         if not isinstance(data.index, pd.PeriodIndex):
             data.index = pd.to_datetime(data.index).to_period(frequency)
 
-    # Select and rename columns
-    result_data = {}
-
-    if price_column not in data.columns:
-        raise ValueError(
-            f"Price column '{price_column}' not found. "
-            f"Available columns: {list(data.columns)}"
-        )
-    result_data["price"] = data[price_column]
-
-    if income_column is not None:
-        if income_column in data.columns:
-            result_data["income"] = data[income_column].fillna(0.0)
-        else:
-            # If income column not specified, create zeros
-            result_data["income"] = pd.Series(0.0, index=data.index)
-
-    result = pd.DataFrame(result_data)
-
-    # Remove any duplicate periods (keep last)
-    result = result[~result.index.duplicated(keep="last")]
-
-    return result
+    return _build_asset_dataframe(
+        data, frequency, price_column, income_column, min_density
+    )

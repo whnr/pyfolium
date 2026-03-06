@@ -178,10 +178,10 @@ from pyfolium import load_from_csv, load_from_dataframe
 
 # load_from_csv and load_from_dataframe return DataFrames
 # ready to pass to the Asset constructor
-data = load_from_csv('prices.csv', frequency='D')
+data = load_from_csv('prices.csv', frequency='D', income_column='Dividend')
 
 universe = AssetUniverse(data_frequency='D')
-Asset('AAPL', universe, data)
+Asset('AAPL', universe, data, income_column='income')
 ```
 
 ## Development

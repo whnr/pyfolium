@@ -88,21 +88,17 @@ def sell_lot(self, symbol: str, lot_id: int, quantity: float):
 Subsumed by structured logging (`c97e900`). `BacktestRunner` emits a summary WARNING
 at backtest end when `trades_df` has `success=False` rows.
 
-### P2-7: `load_from_csv` silently creates zero income on column name mismatch
-**File:** `pyfolium/data.py:66-70`
-**Problem:** If `income_column="Dividend"` but CSV has `"Dividends"`, creates zeros silently.
-**Fix:** When `income_column` is explicitly provided and not found, raise ValueError.
-Only create zeros when `income_column` is None (explicitly opted out).
+### ~~P2-7: `load_from_csv` silently creates zero income on column name mismatch~~ ✓ DONE
+Changed `income_column` default to `None` in both importers. Explicitly named columns
+that don't exist now raise `ValueError`. Aligned with `Asset.__init__` convention.
 
-### P2-8: Double date parsing in `load_from_csv`
-**File:** `pyfolium/data.py:45,51`
-**Problem:** `parse_dates=[date_column]` then `pd.to_datetime()` again.
-**Fix:** Remove `parse_dates` from `read_csv`, keep the explicit `to_datetime`.
+### ~~P2-8: Double date parsing in `load_from_csv`~~ ✓ DONE
+Removed `parse_dates` from `read_csv`; single `pd.to_datetime()` call remains.
 
-### P2-9: Code duplication in `data.py`
-**File:** `pyfolium/data.py:56-77` vs `129-150`
-**Problem:** Column selection, rename, and dedup logic is ~90% identical.
-**Fix:** Extract `_build_result_dataframe(data, price_column, income_column)` helper.
+### ~~P2-9: Code duplication in `data.py`~~ ✓ DONE
+Extracted `_build_asset_dataframe()` and `_check_density()` helpers. Both public
+functions delegate to the shared helper for column validation, rename, dedup, and a
+new data density sanity check (`min_density` parameter, default `0.5`).
 
 ---
 
@@ -219,7 +215,7 @@ All examples updated to drop the 4-line boilerplate. 13 new tests added (5 in
 Recommended sequence:
 
 6. ~~**P2-6** (trade failure warnings)~~ ✓ DONE — Subsumed by structured logging; summary WARNING emitted at backtest end when `trades_df` has failures.
-7. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort
+7. ~~**P2-7, P2-8, P2-9** (data.py cleanup)~~ ✓ DONE — Strict income column validation, removed double parsing, extracted shared helper with density sanity check.
 9. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
 10. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
 11. **Tax/fee extensibility phase 1** — Extract tax methods from Portfolio into TaxConfig. Depends on P0-3.

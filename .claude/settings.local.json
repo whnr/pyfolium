@@ -14,8 +14,7 @@
       "Bash(git ls-tree:*)",
       "Bash(git restore:*)",
       "Bash(git checkout:*)",
-      "Bash(uv run:*)",
-      "Bash(git push -u origin claude/logging-spec-doc-SPLdh)"
+      "Bash(uv run:*)"
     ],
     "deny": [],
     "ask": []

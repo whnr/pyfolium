@@ -286,9 +286,9 @@ class TestTaxLotLifecycle:
         # Buffer dict matches TaxLot
         assert portfolio._txn_buffer[buy_idx]["lot_quantity_remaining"] == approx(7.0)
         # And so does the transactions DataFrame
-        assert portfolio.transactions.iloc[buy_idx][
-            "lot_quantity_remaining"
-        ] == approx(7.0)
+        assert portfolio.transactions.iloc[buy_idx]["lot_quantity_remaining"] == approx(
+            7.0
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -384,17 +384,13 @@ class TestCloneWithTaxLots:
         portfolio.update_history()
 
         cloned = portfolio.clone()
-        original_index_len = sum(
-            len(v) for v in portfolio._txn_period_index.values()
-        )
+        original_index_len = sum(len(v) for v in portfolio._txn_period_index.values())
 
         cloned.advance_period()
         cloned.collect_income()
         cloned.move_cash(5000)
 
-        new_original_len = sum(
-            len(v) for v in portfolio._txn_period_index.values()
-        )
+        new_original_len = sum(len(v) for v in portfolio._txn_period_index.values())
         assert new_original_len == original_index_len  # unchanged
 
 
@@ -435,7 +431,9 @@ class TestUpdateHistoryPeriodIndex:
         portfolio.move_cash(5000)
         portfolio.update_history()
 
-        assert portfolio.history.iloc[0]["cash"] == approx(portfolio.history.iloc[0]["cash"])
+        assert portfolio.history.iloc[0]["cash"] == approx(
+            portfolio.history.iloc[0]["cash"]
+        )
         assert portfolio.history.iloc[1]["cash"] == approx(portfolio.cash)
 
 

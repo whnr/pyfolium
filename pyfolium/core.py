@@ -1,6 +1,7 @@
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
@@ -426,7 +427,9 @@ class Portfolio:
 
         # Transaction buffer: list of dicts with O(1) append.
         # DataFrame is built lazily via the .transactions property.
-        self._txn_buffer: list[dict] = []
+        # Schema defined by Portfolio.transaction_columns; not all keys
+        # are present in every entry (e.g. deposits lack "symbol").
+        self._txn_buffer: list[dict[str, Any]] = []
         self._txn_period_index: dict[pd.Period, list[int]] = {}
         self._tax_lots: dict[str, list[TaxLot]] = {}
         self._txn_df_cache: pd.DataFrame | None = None
@@ -935,7 +938,9 @@ class Portfolio:
                 short_term_gains += lot_gains
 
             lot.quantity_remaining -= lot_quantity_sold
-            # Keep buffer in sync for the .transactions DataFrame view
+            # SYNC: TaxLot.quantity_remaining is the authoritative source;
+            # the buffer entry must mirror it so .transactions reflects
+            # partial sales. If the buffer schema changes, update this too.
             self._txn_buffer[lot.txn_index]["lot_quantity_remaining"] = (
                 lot.quantity_remaining
             )

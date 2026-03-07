@@ -564,12 +564,13 @@ class Portfolio:
             equity cannot be computed (only possible in STRICT mode) or
             if an asset is held past its end_time.
         """
-        holdings = self.holdings.loc[self.current_period]  # type: ignore[call-overload]
+        idx = self._current_period_idx
+        holdings = self.holdings.iloc[idx]
         if price_mode == PriceMode.LAST_VALID:
-            prices = self.asset_universe.price_matrix_ffill.loc[self.current_period]  # type: ignore[call-overload]
+            prices = self.asset_universe.price_matrix_ffill.iloc[idx]
             equity = float((holdings * prices).sum(skipna=False))
         else:
-            prices = self.asset_universe.price_matrix.loc[self.current_period]  # type: ignore[call-overload]
+            prices = self.asset_universe.price_matrix.iloc[idx]
             equity = float((holdings * prices).sum(skipna=False))
         if pd.isna(equity):
             return float("nan")
@@ -589,7 +590,7 @@ class Portfolio:
         return self.get_total_value()
 
     def _check_state(self, expected_state: PortfolioState) -> None:
-        current_state = self._states[self.current_period]  # type: ignore[call-overload]
+        current_state = self._states.iloc[self._current_period_idx]
         if current_state != expected_state:
             raise RuntimeError(
                 f"Portfolio is in the wrong state: {current_state.value}. "
@@ -657,15 +658,15 @@ class Portfolio:
         If the end of the history is reached, it raises a StopIteration.
 
         """
-        if self._states[self.current_period] != PortfolioState.DONE:  # type: ignore[call-overload]
+        if self._states.iloc[self._current_period_idx] != PortfolioState.DONE:
             raise RuntimeError("Last period was not in the DONE state.")
         if self._current_period_idx + 1 >= len(self.history.index):
             raise StopIteration("End of history reached")
-        previous_period = self.current_period
+        prev_idx = self._current_period_idx
         self._current_period_idx += 1
         self.current_period = self.history.index[self._current_period_idx]
-        # Carry forward holdings from the completed period
-        self.holdings.loc[self.current_period] = self.holdings.loc[previous_period]  # type: ignore[call-overload]
+        # Carry forward holdings from the completed period (iloc avoids label lookup)
+        self.holdings.iloc[self._current_period_idx] = self.holdings.iloc[prev_idx]
 
     def update_history(self) -> None:
         """Update the history of the portfolio for the current period.
@@ -693,15 +694,15 @@ class Portfolio:
             self._txn_buffer[i].get("tax_paid", 0) or 0 for i in indices
         )
 
-        self.history.loc[self.current_period] = {
-            "cash": self.cash,
-            "tax_owed": self.tax_owed,
-            "long_term_gains_in_period": long_term_gains,
-            "short_term_gains_in_period": short_term_gains,
-            "taxes_paid_in_period": taxes_paid,
-        }
+        self.history.iloc[self._current_period_idx] = [
+            self.cash,
+            self.tax_owed,
+            long_term_gains,
+            short_term_gains,
+            taxes_paid,
+        ]
 
-        self._states[self.current_period] = PortfolioState.DONE  # type: ignore[call-overload]
+        self._states.iloc[self._current_period_idx] = PortfolioState.DONE
 
     def collect_income(self):
         """Collect all the income for the current period.
@@ -722,14 +723,12 @@ class Portfolio:
         """
         self._check_state(PortfolioState.COLLECT_INCOME)
 
+        idx = self._current_period_idx
         income_this_period = (
-            self.asset_universe.income_matrix.loc[self.current_period].fillna(0)  # type: ignore[call-overload]
+            self.asset_universe.income_matrix.iloc[idx].fillna(0)
         )
-        symbols = (
-            self.holdings.loc[self.current_period]  # type: ignore[call-overload]
-            * income_this_period
-        )
-        symbols = self.holdings.columns[symbols != 0]
+        current_holdings = self.holdings.iloc[idx]
+        symbols = self.holdings.columns[(current_holdings * income_this_period) != 0]
 
         # Compute long-term cutoff once (same for all symbols in this period)
         earliest_long_term_period = (
@@ -781,7 +780,7 @@ class Portfolio:
             self.tax_owed += tax_liability
             self.cash += transaction_amount
 
-        self._states[self.current_period] = PortfolioState.TRANSACT  # type: ignore[call-overload]
+        self._states.iloc[self._current_period_idx] = PortfolioState.TRANSACT
 
     def move_cash(self, amount: float):
         """Move cash in or out of the portfolio.
@@ -832,8 +831,9 @@ class Portfolio:
         if quantity <= 0:
             raise ValueError("Quantity must be positive")
 
-        raw_price = self.asset_universe.price_matrix.loc[
-            self.current_period, symbol  # type: ignore[index]
+        col_idx = self.holdings.columns.get_loc(symbol)
+        raw_price = self.asset_universe.price_matrix.iloc[
+            self._current_period_idx, col_idx  # type: ignore[call-overload]
         ]
         if pd.isna(raw_price):
             raise ValueError(
@@ -845,7 +845,7 @@ class Portfolio:
         cost_basis_per_share = price + fee / quantity
         transaction_amount = -(quantity * price + fee)
 
-        idx = self._register_transaction(
+        txn_idx = self._register_transaction(
             type="buy",
             symbol=symbol,
             quantity=quantity,
@@ -862,11 +862,11 @@ class Portfolio:
             quantity=quantity,
             quantity_remaining=quantity,
             cost_basis_per_share=cost_basis_per_share,
-            txn_index=idx,
+            txn_index=txn_idx,
         )
         self._tax_lots.setdefault(symbol, []).append(lot)
 
-        self.holdings.loc[self.current_period, symbol] += quantity  # type: ignore[index, operator]
+        self.holdings.iloc[self._current_period_idx, col_idx] += quantity  # type: ignore[operator]
 
         self.cash += transaction_amount
 
@@ -906,8 +906,9 @@ class Portfolio:
                 f"{current_holding_quantity} for symbol {symbol}."
             )
         quantity_to_sell = quantity
-        raw_price = self.asset_universe.price_matrix.loc[
-            self.current_period, symbol  # type: ignore[index]
+        col_idx = self.holdings.columns.get_loc(symbol)
+        raw_price = self.asset_universe.price_matrix.iloc[
+            self._current_period_idx, col_idx  # type: ignore[call-overload]
         ]
         if pd.isna(raw_price):
             raise ValueError(
@@ -973,7 +974,7 @@ class Portfolio:
             transaction_amount=transaction_amount,
         )
 
-        self.holdings.loc[self.current_period, symbol] -= quantity  # type: ignore[index, operator]
+        self.holdings.iloc[self._current_period_idx, col_idx] -= quantity  # type: ignore[operator]
 
         self.cash += transaction_amount
         self.tax_owed += tax_liability

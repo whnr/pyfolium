@@ -53,8 +53,8 @@ The log is a `list[LogEntry]` internally — O(1) append, no DataFrame overhead.
 Strategies accumulate log entries in their own `_log: list[LogEntry]`. After each `step()`, the runner drains (extends + clears) the strategy's log into the runner's log. This preserves the current architecture: the strategy only knows about the portfolio, no circular dependency with the runner.
 
 Strategies get a `log(severity, message, data=None)` convenience method they can call in `get_trades()` to record decisions:
-- **INFO**: normal decisions ("rebalancing: AAPL weight drifted from 30% to 37%")
-- **WARNING**: course corrections ("wanted to sell AAPL but insufficient holdings, skipping")
+- **INFO**: normal decisions ("rebalancing: Stock weight drifted from 30% to 37%")
+- **WARNING**: course corrections ("wanted to sell Stock but insufficient holdings, skipping")
 
 ### OutputMode replaces `progress: bool`
 

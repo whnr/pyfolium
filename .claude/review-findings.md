@@ -1,32 +1,9 @@
 # Architecture Review Findings & Action Plan
 
 *Created: 2026-02-22 | Session: review-architecture-changes-GWIjK*
-*Updated: 2026-02-24 | Data gaps handling implemented + refactored per PR review (universe matrices as sole runtime data interface, removed get_price_at/get_income_at)*
-*Updated: 2026-02-28 | Rebased onto dev; mypy → pyright (cast() for reportAssignmentType, warnings demoted in pyproject.toml for remaining pandas-stubs false-positives)*
 *Context: Full codebase review for production readiness — decades of daily data, AI-written strategies*
 
 **After completion items will be deleted and can be recovered from git commit history.**
-
-## Session Summary
-
-This review examined every source file in pyfolium line-by-line. The codebase was largely
-written by Claude (AI), with the original Portfolio/Asset core and DataFrame design decisions
-made by the human author. The code passes its test suite but has structural issues that will
-break at scale and several correctness bugs.
-
-### What's solid (don't touch)
-- Core domain model (Asset, AssetUniverse, Portfolio state machine)
-- Tax system design (short/long term, FIFO/LIFO, withholding)
-- Fee system design (fixed + percentage with min/max caps)
-- Test fixtures in conftest.py (14 focused, well-composed fixtures)
-- Original hand-written tests (state machine, transaction verification)
-
-### What needs work
-- Performance bottlenecks in hot path (O(n²) patterns)
-- Correctness bugs (DataFrame mutation, ignored parameter)
-- ~~AI bloat (empty context manager, dead code)~~ ✓ DONE (`06b1920`)
-- Missing features for production use (specific lot identification, ~~portfolio.total_value~~ ✓)
-- Examples not testable
 
 ---
 
@@ -57,7 +34,7 @@ to find matching buy lots via DataFrame boolean indexing.
 - In `buy_asset`: append to `self._open_lots[symbol]`
 - In `sell_asset`/`collect_income`: read from `self._open_lots[symbol]` (O(1) lookup)
 - **IMPORTANT**: Expose to strategies (not internal-only!) — see P1-5 for `sell_lot()`
-**Strategy interface:** New `portfolio.open_lots["AAPL"]` for fast lot access.
+**Strategy interface:** New `portfolio.open_lots["Stock"]` for fast lot access.
 New `portfolio.open_lots_df` property for DataFrame view.
 **Why exposed:** Specific lot identification is required for tax-loss harvesting strategies.
 The US allows selective lot selling; FIFO/LIFO are just defaults.
@@ -82,30 +59,6 @@ def sell_lot(self, symbol: str, lot_id: int, quantity: float):
 
 ---
 
-## P2 — Design issues & cleanup
-
-### ~~P2-6: Silent failure swallowing in `execute_trades`~~ ✓ DONE
-Subsumed by structured logging (`c97e900`). `BacktestRunner` emits a summary WARNING
-at backtest end when `trades_df` has `success=False` rows.
-
-### P2-7: `load_from_csv` silently creates zero income on column name mismatch
-**File:** `pyfolium/data.py:66-70`
-**Problem:** If `income_column="Dividend"` but CSV has `"Dividends"`, creates zeros silently.
-**Fix:** When `income_column` is explicitly provided and not found, raise ValueError.
-Only create zeros when `income_column` is None (explicitly opted out).
-
-### P2-8: Double date parsing in `load_from_csv`
-**File:** `pyfolium/data.py:45,51`
-**Problem:** `parse_dates=[date_column]` then `pd.to_datetime()` again.
-**Fix:** Remove `parse_dates` from `read_csv`, keep the explicit `to_datetime`.
-
-### P2-9: Code duplication in `data.py`
-**File:** `pyfolium/data.py:56-77` vs `129-150`
-**Problem:** Column selection, rename, and dedup logic is ~90% identical.
-**Fix:** Extract `_build_result_dataframe(data, price_column, income_column)` helper.
-
----
-
 ## P4 — Make examples testable
 
 ### P4-1: Refactor examples to return values
@@ -114,22 +67,9 @@ Only create zeros when `income_column` is None (explicitly opted out).
 **Fix:**
 - Each `example_*()` function returns its result (BacktestResult or relevant values)
 - Keep print() for human readability but add return statements
-- ~~Remove Example 7 (empty context manager — see P2-4)~~ ✓ Done; Example 7 is now the strategy logging demo.
 
 ### P4-2: Add test file for examples
 **File:** `tests/test_examples.py` (new)
-**Fix:**
-```python
-from examples.backtest_runner_example import (
-    example_simple, example_with_progress, ...
-)
-
-def test_example_simple():
-    result = example_simple()
-    assert result.success
-    assert result.portfolio.cash > 0
-    assert result.total_periods > 0
-```
 
 ### P4-3: Missing `__init__.py` or pytest path config for examples
 **Check:** Ensure examples directory is importable from tests.
@@ -139,10 +79,7 @@ May need `examples/__init__.py` or pytest `pythonpath` config update.
 **File:** `examples/backtest_runner_example.py`
 **Problem:** Flagged during PR review as potentially unreliable AI-generated code.
 Needs verification that all examples actually run successfully and produce
-correct results — not just plausible-looking code that compiles.
-**Fix:** Run the file end-to-end, fix any failures. ~~Remove context manager example~~ ✓ Done.
-~~Update all examples to use strategy-owns-start-conditions pattern~~ ✓ Done.
-~~Update examples for OutputMode API~~ ✓ Done (`444c88d`).
+correct results.
 
 ---
 
@@ -158,18 +95,6 @@ or fix the comment. For production, freezing is safer.
 **File:** `pyfolium/strategy.py:78-81`
 Consider having `step()` return the trades list or a StepResult for introspection.
 Low priority — strategies can inspect `trades_df`.
-
-### ~~Verbosity / observability model for different consumers~~ ✓ DONE
-Implemented as `OutputMode(StrEnum)` in `pyfolium/logging.py` with `SILENT`, `SUMMARY`,
-`PROGRESS`. `STRUCTURED` was dropped — `result.log_df` serves the programmatic/LLM use case
-without a separate output mode. `RICH` mode (multi-bar for parallel optimization) planned as
-Phase 3. See `.claude/logging-spec.md` and `DESIGN.md` "Observability" section.
-
-### ~~Logging architecture~~ ✓ DONE
-Implemented in `c97e900`. `BacktestRunner._log: list[LogEntry]` with structured entries.
-`BacktestResult` exposes `.log`, `.log_df`, `.errors`, `.warnings`, `.success`.
-`BaseStrategy.log()` + drain pattern for strategy-authored entries.
-See `.claude/logging-spec.md` for full design rationale.
 
 ### `collect_income` recomputes `earliest_long_term_period` inside loop
 **File:** `pyfolium/core.py:582-585`
@@ -200,32 +125,20 @@ Users should be able to subclass or replace them for their jurisdiction.
 **Depends on:** P0-3 (tax lot data structure) for the lot selection interface.
 **Design doc:** See `DESIGN.md` "Configs as templates" section.
 
-### ~~Strategy owns start conditions (initial cash + start period)~~ ✓ DONE
-**Implemented in:** commit on branch `claude/add-strategy-start-conditions-yUnRc`
-
-`BaseStrategy.__init__` now accepts `initial_cash: float | None = None` and
-`start_period: pd.Period | None = None` as keyword-only parameters. `BacktestRunner` uses
-three-way resolution for `start_period` (explicit runner arg > strategy.start_period >
-portfolio.current_period) and injects `initial_cash` via `move_cash()` on the first period,
-after `collect_income()` (TRANSACT state), before `strategy.step()`.
-
-All examples updated to drop the 4-line boilerplate. 13 new tests added (5 in
-`test_basestrategy.py`, 8 in `test_backtest_runner.py`).
-
 ---
 
 ## Implementation order
 
 Recommended sequence:
 
-6. ~~**P2-6** (trade failure warnings)~~ ✓ DONE — Subsumed by structured logging; summary WARNING emitted at backtest end when `trades_df` has failures.
-7. **P2-7, P2-8, P2-9** (data.py cleanup) — Grouped, moderate effort
+6. ~~**P2-6** (trade failure warnings)~~ ✓ DONE
+7. ~~**P2-7, P2-8, P2-9** (data.py cleanup)~~ ✓ DONE
 9. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
 10. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
 11. **Tax/fee extensibility phase 1** — Extract tax methods from Portfolio into TaxConfig. Depends on P0-3.
-12. ~~**P1-4** (error recovery)~~ ✓ DONE — `strict` flag on `BacktestRunner`; lenient mode records errors in structured log and recovers.
-13. ~~**Logging architecture**~~ ✓ DONE — `pyfolium/logging.py` with `Severity`, `LogEntry`, `OutputMode`; `BacktestRunner._log` + `_emit()`; `BacktestResult.log`/`log_df`/`errors`/`warnings`/`success`; `BaseStrategy.log()` + drain pattern.
-14. ~~**Verbosity/OutputMode**~~ ✓ DONE — `OutputMode.SILENT`/`SUMMARY`/`PROGRESS`. `RICH` mode planned (Phase 3, pending).
+12. ~~**P1-4** (error recovery)~~ ✓ DONE
+13. ~~**Logging architecture**~~ ✓ DONE
+14. ~~**Verbosity/OutputMode**~~ ✓ DONE
 16. **P4-*** (testable examples, audit existing) — After all API changes settle
 
 Each step should be a single reviewable commit.

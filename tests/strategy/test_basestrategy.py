@@ -8,7 +8,7 @@ from pyfolium.strategy import BaseStrategy
 
 class SimpleStrategy(BaseStrategy):
     def get_trades(self) -> list[tuple[str, float]]:
-        return [("AAPL", 100)]
+        return [("Stock", 100)]
 
 
 class ConfiguredStrategy(BaseStrategy):
@@ -23,7 +23,7 @@ def asset_universe():
     universe = AssetUniverse(data_frequency="D")
     dates = pd.period_range(start="2020-01-01", end="2020-01-10", freq="D")
     data = pd.DataFrame(index=dates, data={"price": 100.0, "income": 0.0})
-    Asset("AAPL", universe, data)
+    Asset("Stock", universe, data)
     return universe
 
 
@@ -54,10 +54,10 @@ def test_strategy_initialization(strategy, portfolio):
 
 def test_record_trade(strategy):
     """Test trade recording functionality"""
-    strategy._record_trade("AAPL", 100, 100, "test", True)
+    strategy._record_trade("Stock", 100, 100, "test", True)
 
     trade = strategy.trades_df.iloc[0]
-    assert trade["symbol"] == "AAPL"
+    assert trade["symbol"] == "Stock"
     assert trade["quantity"] == 100
     assert trade["executed_quantity"] == 100
     assert trade["category"] == "test"
@@ -68,7 +68,7 @@ def test_record_trade(strategy):
 def test_get_trades(strategy):
     trades = strategy.get_trades()
 
-    assert trades == [("AAPL", 100)]
+    assert trades == [("Stock", 100)]
 
 
 def test_get_trades_must_be_implemented():
@@ -86,9 +86,9 @@ def test_execute_trades_calls_portfolio(strategy, mocker):
     mock_buy = mocker.patch.object(strategy.portfolio, "buy_asset")
     mock_sell = mocker.patch.object(strategy.portfolio, "sell_asset")
 
-    strategy.execute_trades([("AAPL", 100), ("GOOGL", -50)])
+    strategy.execute_trades([("Stock", 100), ("GOOGL", -50)])
 
-    mock_buy.assert_called_once_with("AAPL", 100)
+    mock_buy.assert_called_once_with("Stock", 100)
     mock_sell.assert_called_once_with("GOOGL", 50)
 
 
@@ -101,21 +101,21 @@ def test_execute_trades_handles_valueerror(strategy, mocker):
     mock_record_trade = mocker.patch.object(strategy, "_record_trade")
 
     # Execute trades where one will trigger the ValueError
-    trades = [("AAPL", 100)]  # This will raise a ValueError
+    trades = [("Stock", 100)]  # This will raise a ValueError
     strategy.execute_trades(trades)
 
     # Assert that buy_asset was called and raised a ValueError
-    mock_buy.assert_called_once_with("AAPL", 100)
+    mock_buy.assert_called_once_with("Stock", 100)
 
     # Verify that _record_trade was called with success=False due to the exception
-    mock_record_trade.assert_called_once_with("AAPL", 100, 0, success=False)
+    mock_record_trade.assert_called_once_with("Stock", 100, 0, success=False)
 
 
 def test_step_executes_trades(strategy, mocker):
     """Test that step calls get_trades and execute_trades"""
     mock_execute = mocker.patch.object(strategy, "execute_trades")
     strategy.step()
-    mock_execute.assert_called_once_with([("AAPL", 100)])
+    mock_execute.assert_called_once_with([("Stock", 100)])
 
 
 # ---------------------------------------------------------------------------

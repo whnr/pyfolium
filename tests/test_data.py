@@ -97,31 +97,22 @@ def test_load_from_dataframe_default_no_income():
     assert "income" not in result.columns
 
 
-def test_load_from_dataframe_handles_duplicates():
-    """Test that duplicate periods are handled correctly."""
+def test_load_from_dataframe_rejects_duplicates():
+    """Duplicate periods in input data must raise ValueError."""
     df = pd.DataFrame(
         {
-            "date": [
-                "2020-01-01",
-                "2020-01-01",
-                "2020-01-02",
-            ],  # Duplicate date
+            "date": ["2020-01-01", "2020-01-01", "2020-01-02"],
             "price": [100.0, 101.0, 102.0],
         }
     )
     df["date"] = pd.to_datetime(df["date"])
 
-    result = load_from_dataframe(
-        df, frequency="D", date_column="date", income_column=None
-    )
-
-    # Should keep last value for duplicate period
-    assert len(result) == 2  # Only unique periods
-    assert result.loc[pd.Period("2020-01-01", "D"), "price"] == 101.0
+    with pytest.raises(ValueError, match="Duplicate periods found"):
+        load_from_dataframe(df, frequency="D", date_column="date", income_column=None)
 
 
 # ---------------------------------------------------------------------------
-# load_from_dataframe — income column validation (P2-7)
+# load_from_dataframe — income column validation
 # ---------------------------------------------------------------------------
 
 
@@ -232,7 +223,7 @@ def test_load_from_csv_custom_columns(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# load_from_csv — income column validation (P2-7)
+# load_from_csv — income column validation
 # ---------------------------------------------------------------------------
 
 
@@ -267,7 +258,6 @@ def test_density_rejects_monthly_in_daily():
 
 def test_density_passes_weekday_stock_data():
     """Daily stock data (weekdays only) has ~69% density — should pass."""
-    # Generate one year of weekday-only dates
     all_days = pd.date_range("2020-01-01", "2020-12-31", freq="D")
     weekdays = all_days[all_days.weekday < 5]
     rng = np.random.default_rng(42)
@@ -290,20 +280,27 @@ def test_density_disabled_with_none():
     assert len(result) == 12
 
 
-def test_density_skipped_for_short_data():
-    """Fewer than 3 data points should skip the density check."""
+def test_density_raises_for_two_distant_points():
+    """Even two data points should trigger density check when sparse."""
     dates = pd.to_datetime(["2020-01-01", "2020-12-31"])
     df = pd.DataFrame({"price": [100.0, 110.0]}, index=dates)
 
-    # 2 points over 366 daily periods — 0.5% density, but check is skipped
-    result = load_from_dataframe(df, frequency="D")
+    with pytest.raises(ValueError, match="Data density too low"):
+        load_from_dataframe(df, frequency="D")
 
-    assert len(result) == 2
+
+def test_density_raises_for_single_point():
+    """A single data point cannot have its density assessed."""
+    dates = pd.to_datetime(["2020-06-15"])
+    df = pd.DataFrame({"price": [100.0]}, index=dates)
+
+    with pytest.raises(ValueError, match="single observation"):
+        load_from_dataframe(df, frequency="D")
 
 
 def test_density_custom_threshold():
     """Custom threshold can be stricter or more lenient."""
-    # ~60% density: 4 out of 7 days
+    # ~57% density: 4 out of 7 days
     dates = pd.to_datetime(
         [
             "2020-01-01",
@@ -331,7 +328,6 @@ def test_density_custom_threshold():
 def test_density_check_via_csv(tmp_path):
     """Density check also works through the CSV loading path."""
     csv_path = tmp_path / "sparse.csv"
-    # Monthly data points spanning a year
     dates = pd.date_range("2020-01-01", periods=12, freq="MS")
     df = pd.DataFrame({"Date": dates.strftime("%Y-%m-%d"), "Close": range(100, 112)})
     df.to_csv(csv_path, index=False)

@@ -32,8 +32,11 @@ def _check_density(
     """
     if min_density is None:
         return
-    if len(data) < 3:
-        return
+    if len(data) == 1:
+        raise ValueError(
+            "Cannot assess data density with a single observation. "
+            "Provide at least two data points."
+        )
 
     first_period = data.index.min()
     last_period = data.index.max()
@@ -68,7 +71,7 @@ def _build_asset_dataframe(
     """Build a normalised asset DataFrame from raw input.
 
     Validates columns, renames to canonical names ("price", "income"),
-    removes duplicate periods, and runs the density sanity check.
+    rejects duplicate periods, and runs the density sanity check.
 
     Args:
         data: DataFrame with a PeriodIndex.
@@ -84,8 +87,8 @@ def _build_asset_dataframe(
 
     Raises:
         ValueError: If *price_column* or an explicitly provided
-            *income_column* is missing from *data*, or if density is
-            too low.
+            *income_column* is missing from *data*, if duplicate periods
+            are found, or if density is too low.
     """
     if price_column not in data.columns:
         raise ValueError(
@@ -105,8 +108,14 @@ def _build_asset_dataframe(
 
     result = pd.DataFrame(result_data)
 
-    # Remove any duplicate periods (keep last)
-    result = result[~result.index.duplicated(keep="last")]
+    # Reject duplicate periods — they indicate data quality issues
+    duplicated = result.index.duplicated(keep=False)
+    if duplicated.any():
+        dup_periods = result.index[duplicated].unique().tolist()
+        raise ValueError(
+            f"Duplicate periods found: {dup_periods}. "
+            "Input data must have unique periods."
+        )
 
     _check_density(result, frequency, min_density)
 
@@ -145,7 +154,7 @@ def load_from_csv(
             CSV, or if data density is below *min_density*.
 
     Example:
-        >>> df = load_from_csv("data/AAPL.csv", frequency="D",
+        >>> df = load_from_csv("data/Stock.csv", frequency="D",
         ...                    income_column="Dividend")
         >>> df.head()
                     price  income

@@ -46,7 +46,7 @@ data = pd.DataFrame({
     'income': [1.0 if i % 60 == 0 else 0.0 for i in range(252)]
 }, index=dates)
 
-Asset('AAPL', universe, data)
+Asset('Stock', universe, data)
 
 # 3. Define strategy — initial_cash seeds the portfolio on the first period
 class BuyAndHold(BaseStrategy):
@@ -57,7 +57,7 @@ class BuyAndHold(BaseStrategy):
     def get_trades(self):
         if not self.invested and self.portfolio.cash >= 10000:
             self.invested = True
-            return [('AAPL', 100)]
+            return [('Stock', 100)]
         return []
 
 # 4. Create portfolio and run backtest — no manual cash seeding required
@@ -139,7 +139,7 @@ class MomentumStrategy(BaseStrategy):
     def get_trades(self):
         # Return list of (symbol, quantity) tuples
         # Positive quantity = buy, negative = sell
-        return [('AAPL', 10), ('GOOGL', -5)]
+        return [('Stock', 10), ('GOOGL', -5)]
 
 # initial_cash and start_period are keyword-only params on BaseStrategy
 strategy = MomentumStrategy(portfolio, lookback=30, initial_cash=50000)
@@ -181,7 +181,7 @@ from pyfolium import load_from_csv, load_from_dataframe
 data = load_from_csv('prices.csv', frequency='D', income_column='Dividend')
 
 universe = AssetUniverse(data_frequency='D')
-Asset('AAPL', universe, data, income_column='income')
+Asset('Stock', universe, data, income_column='income')
 ```
 
 ## Development

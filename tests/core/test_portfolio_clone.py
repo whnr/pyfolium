@@ -11,7 +11,7 @@ def asset_universe():
     universe = AssetUniverse(data_frequency="D")
     dates = pd.period_range(start="2020-01-01", end="2020-01-10", freq="D")
     data = pd.DataFrame(index=dates, data={"price": 100.0, "income": 1.0})
-    Asset("AAPL", universe, data)
+    Asset("Stock", universe, data)
     Asset("GOOGL", universe, data)
     return universe
 

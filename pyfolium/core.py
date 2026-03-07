@@ -690,9 +690,7 @@ class Portfolio:
         short_term_gains = sum(
             self._txn_buffer[i].get("short_term_gains", 0) or 0 for i in indices
         )
-        taxes_paid = sum(
-            self._txn_buffer[i].get("tax_paid", 0) or 0 for i in indices
-        )
+        taxes_paid = sum(self._txn_buffer[i].get("tax_paid", 0) or 0 for i in indices)
 
         self.history.iloc[self._current_period_idx] = [
             self.cash,
@@ -724,9 +722,7 @@ class Portfolio:
         self._check_state(PortfolioState.COLLECT_INCOME)
 
         idx = self._current_period_idx
-        income_this_period = (
-            self.asset_universe.income_matrix.iloc[idx].fillna(0)
-        )
+        income_this_period = self.asset_universe.income_matrix.iloc[idx].fillna(0)
         current_holdings = self.holdings.iloc[idx]
         symbols = self.holdings.columns[(current_holdings * income_this_period) != 0]
 
@@ -835,7 +831,7 @@ class Portfolio:
         raw_price = self.asset_universe.price_matrix.iloc[
             self._current_period_idx, col_idx  # type: ignore[call-overload]
         ]
-        if pd.isna(raw_price):
+        if pd.isna(raw_price):  # type: ignore[arg-type]
             raise ValueError(
                 f"Cannot buy {symbol} at {self.current_period}: "
                 "no price data for this period"
@@ -910,7 +906,7 @@ class Portfolio:
         raw_price = self.asset_universe.price_matrix.iloc[
             self._current_period_idx, col_idx  # type: ignore[call-overload]
         ]
-        if pd.isna(raw_price):
+        if pd.isna(raw_price):  # type: ignore[arg-type]
             raise ValueError(
                 f"Cannot sell {symbol} at {self.current_period}: "
                 "no price data for this period"
@@ -940,9 +936,9 @@ class Portfolio:
 
             lot.quantity_remaining -= lot_quantity_sold
             # Keep buffer in sync for the .transactions DataFrame view
-            self._txn_buffer[lot.txn_index][
-                "lot_quantity_remaining"
-            ] = lot.quantity_remaining
+            self._txn_buffer[lot.txn_index]["lot_quantity_remaining"] = (
+                lot.quantity_remaining
+            )
             self._txn_df_cache = None
 
             quantity_to_sell -= lot_quantity_sold

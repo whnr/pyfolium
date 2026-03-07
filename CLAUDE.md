@@ -90,11 +90,17 @@ This state machine is enforced via `PortfolioState` enum to prevent operations i
 - Rejects NaN prices at construction (data quality gate)
 - Runtime price/income queries go through `universe.price_matrix`/`income_matrix`, not Asset methods
 
+**TaxLot** (`pyfolium/core.py`): Dataclass representing a single purchase lot
+- Created by `buy_asset()`, consumed by `sell_asset()` in FIFO/LIFO order
+- Tracks `symbol`, `period`, `quantity`, `quantity_remaining`, `cost_basis_per_share`
+- Exposed to strategies via `portfolio.open_lots` for lot-level introspection
+
 **Portfolio** (`pyfolium/core.py`): The core backtesting engine
 - Tracks `cash`, `tax_owed`, `holdings` (positions over time)
-- Maintains complete `transactions` log and `history` of account states
-- Tax lots tracked via FIFO or LIFO for capital gains calculations
-- Current period tracked via `current_period` and advanced strictly monotonously
+- Transactions stored internally as `list[dict]` buffer; `portfolio.transactions` property builds DataFrame lazily
+- Tax lots tracked as `TaxLot` dataclass instances via `_tax_lots: dict[str, list[TaxLot]]`
+- Period index `_txn_period_index: dict[Period, list[int]]` for O(1) per-period transaction lookup
+- Current period tracked via `current_period` / `_current_period_idx`; hot paths use `.iloc` for performance
 - `clone()` method creates independent copy for strategy comparison
 
 **BaseStrategy** (`pyfolium/strategy.py`): Abstract class for trading strategies
@@ -164,7 +170,7 @@ If a change affects examples, update the files in `examples/` too.
 
 ```
 pyfolium/
-├── core.py         # Asset, AssetUniverse, Portfolio, TaxConfig, FeeConfig
+├── core.py         # Asset, AssetUniverse, Portfolio, TaxLot, TaxConfig, FeeConfig
 ├── strategy.py     # BaseStrategy ABC
 ├── simulation.py   # BacktestRunner, BacktestResult
 ├── logging.py      # Severity, LogEntry, OutputMode
@@ -187,6 +193,7 @@ strategies/         # User-defined strategies (empty, for users to populate)
 ## Current State
 
 Recent features:
+- **Transaction buffer + TaxLot (P0-2/P0-3)**: Transactions stored as `list[dict]` with lazy DataFrame via `.transactions` property; `TaxLot` dataclass for O(1) lot lookups in `sell_asset`/`collect_income`; period index for O(1) `update_history`; hot paths use `.iloc` instead of `.loc`; `portfolio.open_lots` exposes lots to strategies; benchmark: 1.83x speedup (137→251 periods/sec on 100-asset, 50yr daily simulation)
 - **Structured logging**: `Severity`, `LogEntry`, `OutputMode` in `pyfolium/logging.py`; `BacktestRunner` captures structured log entries; `BaseStrategy.log()` lets strategies emit entries drained by the runner; `BacktestResult` exposes `.log`, `.log_df`, `.errors`, `.warnings`, `.success`; `OutputMode` enum (`SILENT`/`SUMMARY`/`PROGRESS`) controls terminal output
 - **Strategy start conditions**: `BaseStrategy` accepts `initial_cash` and `start_period` keyword args; `BacktestRunner` injects cash on the first active period and resolves start period with precedence: runner arg > `strategy.start_period` > `portfolio.current_period`
 - **Data gaps handling**: Asset rejects NaN prices at construction; trades on out-of-range periods fail gracefully via `success=False` in `trades_df`; NaN income treated as zero
@@ -194,6 +201,6 @@ Recent features:
 - **Portfolio.clone()**: Deep copy for strategy comparison and optimization
 - **Pydantic validation**: TaxConfig and FeeConfig with automatic validation
 - **Data loading**: `load_from_csv` and `load_from_dataframe` utilities with explicit `income_column` (defaults to `None`; raises `ValueError` when an explicitly named column is missing) and `min_density` sanity check (default `0.5`) that catches frequency mismatches like monthly data loaded as daily
-- **Comprehensive examples**: 7 usage patterns in examples/backtest_runner_example.py
+- **Comprehensive examples**: 7 usage patterns in examples/backtest_runner_example.py; benchmark in examples/benchmark.py
 
 See `.claude/review-findings.md` for the full architecture review and action plan.

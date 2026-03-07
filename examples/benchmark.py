@@ -120,7 +120,9 @@ class RandomTraderStrategy(BaseStrategy):
         if len(held) < 10:
             return []
 
-        sell_symbols = list(self._rng.choice(held, size=min(10, len(held)), replace=False))
+        sell_symbols = list(
+            self._rng.choice(held, size=min(10, len(held)), replace=False)
+        )
         trades: list[tuple[str, float]] = []
         sell_value = 0.0
         for sym in sell_symbols:
@@ -159,7 +161,9 @@ def run_benchmark() -> None:
     n_years = 50
     n_periods = n_years * 365 + n_years // 4  # include leap days
 
-    print(f"Setting up benchmark: {n_assets} assets, {n_years} years, {n_periods} periods")
+    print(
+        f"Setting up benchmark: {n_assets} assets, {n_years} years, {n_periods} periods"
+    )
     print("=" * 70)
 
     # --- Setup phase ---

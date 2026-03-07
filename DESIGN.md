@@ -71,9 +71,9 @@ The Portfolio is the central object. It tracks:
 
 - **Cash** — a single scalar. All cash is fungible.
 - **Holdings** — a DataFrame of position quantities indexed by period and asset symbol.
-- **Transactions** — a complete log of every buy, sell, and cash movement.
+- **Transactions** — a complete log of every buy, sell, and cash movement. Stored internally as a list-of-dicts buffer; exposed as a DataFrame via `portfolio.transactions`.
 - **History** — a per-period snapshot of the portfolio state (cash, holdings value, tax owed).
-- **Tax lots** — per-share cost basis tracking for capital gains calculations.
+- **Tax lots** — `TaxLot` dataclass instances tracking per-share cost basis for capital gains. Exposed via `portfolio.open_lots`.
 
 ### Why a single cash balance?
 
@@ -160,11 +160,18 @@ This is tracked in the review findings under the implementation roadmap.
 
 ### Tax lot tracking
 
-Each purchase creates a tax lot with a per-share cost basis. When selling, lots are consumed in FIFO or LIFO order. This enables:
+Each purchase creates a `TaxLot` dataclass — a first-class record of the lot's symbol, purchase period, original quantity, remaining quantity, and per-share cost basis. When selling, lots are consumed in FIFO or LIFO order. This enables:
 
 - Accurate capital gains calculation for any holding period
 - Short-term vs long-term gain classification
-- Future: specific lot identification for tax-loss harvesting (see roadmap in review findings)
+- Strategy-level lot inspection via `portfolio.open_lots` (e.g. for tax-loss harvesting)
+- Future: specific lot identification via `sell_lot()` and custom lot selection via `TaxConfig.select_lots()`
+
+### Transaction buffer
+
+Transactions are stored internally as a `list[dict]` with O(1) append, not a DataFrame. The `portfolio.transactions` property lazily builds a DataFrame on access. This avoids the O(n²) cost of `pd.concat` on every trade.
+
+A period index (`dict[Period, list[int]]`) provides O(1) lookup for `update_history()`, and the `TaxLot` list provides O(1) lot access for `sell_asset()` and `collect_income()`, avoiding full-table scans.
 
 ## Data Integrity: Gaps and Graceful Failure
 

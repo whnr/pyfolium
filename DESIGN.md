@@ -128,15 +128,15 @@ This matters because taxes and fees dramatically affect real portfolio performan
 
 The design intent is:
 
-1. **The shipped configs cover the common case** — short-term vs long-term capital gains with FIFO/LIFO, flat-rate income tax withholding, fixed + percentage fees with caps. This handles a large class of backtests accurately enough.
+1. **The shipped configs cover the common case** — short-term vs long-term capital gains with FIFO/LIFO/AVERAGE cost basis, flat-rate income tax withholding, fixed + percentage fees with caps. This handles a large class of backtests accurately enough.
 
 2. **Users should be able to swap in their own implementations** — a user modeling US wash sale rules, German *Verlustverrechnungstöpfe* (loss offset pools), or a brokerage with tiered commission schedules should be able to provide their own tax or fee class that the Portfolio accepts without modification.
 
-3. **The interface is the contract, not the implementation** — Portfolio should depend on *what* a tax/fee config provides (rates, lot ordering, fee calculation), not on *which specific class* provides it. This means:
+3. **The interface is the contract, not the implementation** — Portfolio depends on *what* a tax/fee config provides (rates, lot ordering, fee calculation), not on *which specific class* provides it. This means:
    - `FeeConfig.calculate_fee(transaction_value) → float` is the fee interface.
-   - Tax config needs a similar pattern: the tax calculation logic that currently lives in Portfolio's sell and income paths should be delegable to the config.
+   - `TaxConfig` follows the same pattern: all tax calculation logic lives in the config, not in Portfolio's sell and income paths.
 
-**Current state:** Both FeeConfig and TaxConfig own their calculation logic. FeeConfig has `calculate_fee()`. TaxConfig provides four methods that Portfolio delegates to:
+Both FeeConfig and TaxConfig own their calculation logic. FeeConfig has `calculate_fee()`. TaxConfig provides five methods that Portfolio delegates to:
 - `long_term_cutoff_period(current_period, data_frequency)` — computes the holding period boundary
 - `classify_gain(purchase_period, current_period, data_frequency)` — returns `"short_term"` or `"long_term"`
 - `calculate_tax(short_term_gains, long_term_gains)` — returns a `TaxResult` with `tax_liability` and `tax_paid`

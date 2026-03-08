@@ -1032,6 +1032,51 @@ def test_sell_asset_tax_lot_handling_lifo(portfolio_with_assets):
     assert portfolio.transactions.loc[index_buy_2]["lot_quantity_remaining"] == 0.0
 
 
+def test_sell_asset_average_cost_basis():
+    """AVERAGE strategy uses weighted average cost across all open lots."""
+    u = AssetUniverse(data_frequency="D")
+    # Prices: 50, 100, 150 across 3 periods
+    dates = pd.period_range("2024-01-01", periods=3, freq="D")
+    Asset("Stock", u, pd.DataFrame({"price": [50.0, 100.0, 150.0]}, index=dates))
+
+    p = Portfolio(
+        u,
+        tax_config=TaxConfig(
+            tax_strategy="AVERAGE",
+            short_term_rate=0.0,
+            withhold_tax=False,
+        ),
+    )
+
+    # Buy 10 shares at 50
+    p.collect_income()
+    p.move_cash(100000)
+    p.buy_asset("Stock", 10)
+    p.update_history()
+
+    # Buy 10 shares at 100
+    p.advance_period()
+    p.collect_income()
+    p.buy_asset("Stock", 10)
+    p.update_history()
+
+    # Sell 5 at 150; average cost = (10*50 + 10*100) / 20 = 75
+    p.advance_period()
+    p.collect_income()
+    cash_before = p.cash
+    p.sell_asset("Stock", 5)
+
+    # Proceeds = 5 * 150 = 750; no fees/taxes
+    assert p.cash == approx(cash_before + 750.0)
+    assert p.holdings.iloc[2]["Stock"] == approx(15.0)
+
+    # Verify gains are based on average cost (75), not individual lot cost
+    sell_txn = p.transactions[p.transactions["type"] == "sell"].iloc[0]
+    total_gains = sell_txn["short_term_gains"] + sell_txn["long_term_gains"]
+    # gain = 5 * (150 - 75) = 375
+    assert total_gains == approx(375.0)
+
+
 def test_sell_asset_tax_strategy_error(portfolio_with_assets):
     portfolio = portfolio_with_assets
     portfolio.tax_config.tax_strategy = "UNKNOWN"

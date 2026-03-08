@@ -116,7 +116,7 @@ Recommended sequence:
 7. ~~**P2-7, P2-8, P2-9** (data.py cleanup)~~ ✓ DONE
 9. ~~**P0-2** (transaction pre-allocation)~~ ✓ DONE
 10. ~~**P0-3**~~ ✓ DONE — **P1-5** (sell_lot) — Feature addition, depends on P0-3
-11. **Tax/fee extensibility phase 1** — Extract tax methods from Portfolio into TaxConfig. Depends on P0-3.
+11. ~~**Tax/fee extensibility phase 1** — Extract tax methods from Portfolio into TaxConfig. Depends on P0-3.~~ ✓ DONE
 12. ~~**P1-4** (error recovery)~~ ✓ DONE
 13. ~~**Logging architecture**~~ ✓ DONE
 14. ~~**Verbosity/OutputMode**~~ ✓ DONE

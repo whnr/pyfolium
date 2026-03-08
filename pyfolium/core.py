@@ -904,7 +904,79 @@ class Portfolio:
                 f"Quantity to sell {quantity} is greater than current holdings "
                 f"{current_holding_quantity} for symbol {symbol}."
             )
-        quantity_to_sell = quantity
+
+        # Build lot-quantity pairs in FIFO/LIFO order
+        lots_to_sell: list[tuple[TaxLot, float]] = []
+        remaining = quantity
+        for lot in open_lots:
+            take = min(remaining, lot.quantity_remaining)
+            lots_to_sell.append((lot, take))
+            remaining -= take
+            if remaining <= 0:
+                break
+
+        self._execute_lot_sales(symbol, lots_to_sell, quantity)
+
+    def sell_lot(self, lot: TaxLot, quantity: float) -> None:
+        """Sell shares from a specific tax lot.
+
+        Unlike ``sell_asset()`` which consumes lots in FIFO/LIFO order,
+        this method targets a single lot chosen by the caller. This enables
+        tax-loss harvesting and other tax-optimized strategies.
+
+        Args:
+            lot: The TaxLot to sell from. Must be an open lot belonging
+                to this portfolio (obtained via ``open_lots``).
+            quantity: Number of shares to sell. Must be positive and
+                at most ``lot.quantity_remaining``.
+
+        Raises:
+            RuntimeError: If portfolio is not in TRANSACT state.
+            ValueError: If quantity is invalid, lot is closed, or lot
+                does not belong to this portfolio.
+        """
+        self._check_state(PortfolioState.TRANSACT)
+
+        if quantity <= 0:
+            raise ValueError("Quantity must be greater than 0")
+
+        if not lot.is_open:
+            raise ValueError(
+                f"Lot for {lot.symbol} (period={lot.period}) is closed; "
+                "no shares remain to sell."
+            )
+
+        owned_lots = self._tax_lots.get(lot.symbol, [])
+        if not any(lot is existing for existing in owned_lots):
+            raise ValueError(
+                "Lot does not belong to this portfolio. "
+                "Use portfolio.open_lots to obtain lot references."
+            )
+
+        if quantity > lot.quantity_remaining:
+            raise ValueError(
+                f"Quantity {quantity} exceeds lot's remaining shares "
+                f"{lot.quantity_remaining}."
+            )
+
+        self._execute_lot_sales(lot.symbol, [(lot, quantity)], quantity)
+
+    def _execute_lot_sales(
+        self,
+        symbol: str,
+        lots_to_sell: list[tuple[TaxLot, float]],
+        total_quantity: float,
+    ) -> None:
+        """Shared implementation for sell_asset and sell_lot.
+
+        Handles price lookup, fee calculation, gain classification,
+        tax withholding, transaction registration, and portfolio updates.
+
+        Args:
+            symbol: Asset symbol being sold.
+            lots_to_sell: Pairs of (lot, quantity_from_this_lot).
+            total_quantity: Total shares being sold across all lots.
+        """
         col_idx = self.holdings.columns.get_loc(symbol)
         raw_price = self.asset_universe.price_matrix.iloc[
             self._current_period_idx, col_idx  # type: ignore[call-overload]
@@ -915,8 +987,8 @@ class Portfolio:
                 "no price data for this period"
             )
         price = float(raw_price)  # type: ignore[arg-type]
-        fee = self.fee_config.calculate_fee(quantity * price)
-        cost_basis_per_share = price - fee / quantity
+        fee = self.fee_config.calculate_fee(total_quantity * price)
+        sell_basis_per_share = price - fee / total_quantity
 
         long_term_gains = 0.0
         short_term_gains = 0.0
@@ -926,10 +998,9 @@ class Portfolio:
             - self.tax_config.long_term_holding_period
         ).to_period(self.asset_universe.data_frequency)
 
-        for lot in open_lots:
-            lot_quantity_sold = min(quantity_to_sell, lot.quantity_remaining)
+        for lot, lot_quantity_sold in lots_to_sell:
             lot_gains = lot_quantity_sold * (
-                cost_basis_per_share - lot.cost_basis_per_share
+                sell_basis_per_share - lot.cost_basis_per_share
             )
 
             if lot.period <= earliest_long_term_period:
@@ -938,17 +1009,10 @@ class Portfolio:
                 short_term_gains += lot_gains
 
             lot.quantity_remaining -= lot_quantity_sold
-            # SYNC: TaxLot.quantity_remaining is the authoritative source;
-            # the buffer entry must mirror it so .transactions reflects
-            # partial sales. If the buffer schema changes, update this too.
             self._txn_buffer[lot.txn_index]["lot_quantity_remaining"] = (
                 lot.quantity_remaining
             )
             self._txn_df_cache = None
-
-            quantity_to_sell -= lot_quantity_sold
-            if quantity_to_sell <= 0:
-                break
 
         tax_liability = (
             long_term_gains * self.tax_config.long_term_rate
@@ -961,12 +1025,12 @@ class Portfolio:
             tax_paid = tax_liability
             tax_liability = 0.0
 
-        transaction_amount = quantity * price - fee - tax_paid
+        transaction_amount = total_quantity * price - fee - tax_paid
 
         self._register_transaction(
             type="sell",
             symbol=symbol,
-            quantity=quantity,
+            quantity=total_quantity,
             price=price,
             fee=fee,
             tax_paid=tax_paid,
@@ -975,7 +1039,7 @@ class Portfolio:
             transaction_amount=transaction_amount,
         )
 
-        self.holdings.iloc[self._current_period_idx, col_idx] -= quantity  # type: ignore[operator]
+        self.holdings.iloc[self._current_period_idx, col_idx] -= total_quantity  # type: ignore[operator]
 
         self.cash += transaction_amount
         self.tax_owed += tax_liability

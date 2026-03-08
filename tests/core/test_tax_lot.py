@@ -459,3 +459,214 @@ class TestCollectIncomeWithTaxLots:
 
         # The lot should still be intact
         assert p._tax_lots["A"][0].quantity_remaining == 10.0
+
+
+# ---------------------------------------------------------------------------
+# sell_lot — specific lot identification
+# ---------------------------------------------------------------------------
+
+
+class TestSellLot:
+    """Tests for Portfolio.sell_lot() which sells from a specific TaxLot."""
+
+    def test_sell_lot_basic(self, portfolio):
+        """Partial sell from a specific lot updates quantity and holdings."""
+        portfolio.collect_income()
+        portfolio.move_cash(10000)
+        portfolio.buy_asset("A", 10)
+
+        lot = portfolio._tax_lots["A"][0]
+        portfolio.sell_lot(lot, 3)
+
+        assert lot.quantity_remaining == approx(7.0)
+        assert portfolio.holdings.iloc[0]["A"] == approx(7.0)
+
+    def test_sell_lot_full(self, portfolio):
+        """Selling entire lot closes it and zeros out holdings."""
+        portfolio.collect_income()
+        portfolio.move_cash(10000)
+        portfolio.buy_asset("A", 10)
+
+        lot = portfolio._tax_lots["A"][0]
+        portfolio.sell_lot(lot, 10)
+
+        assert lot.quantity_remaining == 0.0
+        assert lot.is_open is False
+        assert portfolio.holdings.iloc[0]["A"] == approx(0.0)
+
+    def test_sell_lot_cash_updated(self, portfolio):
+        """Cash increases by (quantity * price - fee) after selling a lot."""
+        portfolio.collect_income()
+        portfolio.move_cash(10000)
+        portfolio.buy_asset("A", 10)
+        cash_before = portfolio.cash
+
+        lot = portfolio._tax_lots["A"][0]
+        portfolio.sell_lot(lot, 5)
+
+        # price=100, no fees/taxes by default
+        assert portfolio.cash == approx(cash_before + 5 * 100.0)
+
+    def test_sell_lot_quantity_exceeds_remaining(self, portfolio):
+        """Selling more than lot.quantity_remaining raises ValueError."""
+        portfolio.collect_income()
+        portfolio.move_cash(10000)
+        portfolio.buy_asset("A", 10)
+
+        lot = portfolio._tax_lots["A"][0]
+        with pytest.raises(ValueError, match="exceeds"):
+            portfolio.sell_lot(lot, 15)
+
+    def test_sell_lot_zero_quantity(self, portfolio):
+        """Selling zero raises ValueError."""
+        portfolio.collect_income()
+        portfolio.move_cash(10000)
+        portfolio.buy_asset("A", 10)
+
+        lot = portfolio._tax_lots["A"][0]
+        with pytest.raises(ValueError, match="greater than 0"):
+            portfolio.sell_lot(lot, 0)
+
+    def test_sell_lot_negative_quantity(self, portfolio):
+        """Selling negative raises ValueError."""
+        portfolio.collect_income()
+        portfolio.move_cash(10000)
+        portfolio.buy_asset("A", 10)
+
+        lot = portfolio._tax_lots["A"][0]
+        with pytest.raises(ValueError, match="greater than 0"):
+            portfolio.sell_lot(lot, -5)
+
+    def test_sell_lot_closed_lot(self, portfolio):
+        """Selling from an already-closed lot raises ValueError."""
+        portfolio.collect_income()
+        portfolio.move_cash(10000)
+        portfolio.buy_asset("A", 10)
+
+        lot = portfolio._tax_lots["A"][0]
+        portfolio.sell_lot(lot, 10)  # close it
+
+        with pytest.raises(ValueError, match="closed"):
+            portfolio.sell_lot(lot, 1)
+
+    def test_sell_lot_wrong_portfolio(self, universe):
+        """Selling a lot that doesn't belong to this portfolio raises ValueError."""
+        p1 = Portfolio(universe)
+        p2 = Portfolio(universe)
+
+        p1.collect_income()
+        p1.move_cash(10000)
+        p1.buy_asset("A", 10)
+
+        p2.collect_income()
+        p2.move_cash(10000)
+
+        lot_from_p1 = p1._tax_lots["A"][0]
+        with pytest.raises(ValueError, match="does not belong"):
+            p2.sell_lot(lot_from_p1, 5)
+
+    def test_sell_lot_wrong_state(self, portfolio):
+        """sell_lot outside TRANSACT state raises RuntimeError."""
+        # Portfolio starts in COLLECT_INCOME state
+        with pytest.raises(RuntimeError):
+            lot = TaxLot("A", pd.Period("2020-01-01", freq="D"), 10, 10, 100.0, 0)
+            portfolio.sell_lot(lot, 5)
+
+    def test_sell_lot_transaction_registered(self, portfolio):
+        """A sell transaction is recorded in portfolio.transactions."""
+        portfolio.collect_income()
+        portfolio.move_cash(10000)
+        portfolio.buy_asset("A", 10)
+
+        lot = portfolio._tax_lots["A"][0]
+        portfolio.sell_lot(lot, 5)
+
+        sells = portfolio.transactions[portfolio.transactions["type"] == "sell"]
+        assert len(sells) == 1
+        assert sells.iloc[0]["symbol"] == "A"
+        assert sells.iloc[0]["quantity"] == approx(5.0)
+        assert sells.iloc[0]["price"] == approx(100.0)
+
+    def test_sell_lot_with_fees(self, portfolio_with_fees):
+        """Fee is applied to the sell_lot transaction."""
+        p = portfolio_with_fees
+        p.collect_income()
+        p.move_cash(100000)
+        p.buy_asset("A", 10)
+
+        lot = p._tax_lots["A"][0]
+        p.sell_lot(lot, 5)
+
+        sells = p.transactions[p.transactions["type"] == "sell"]
+        # fee = 1.0 + 0.01 * (5 * 100) = 1.0 + 5.0 = 6.0
+        assert sells.iloc[0]["fee"] == approx(6.0)
+
+    def test_sell_lot_short_term_gains(self, portfolio_with_taxes):
+        """Selling in same period classifies gains as short-term."""
+        p = portfolio_with_taxes
+        p.collect_income()
+        p.move_cash(10000)
+        p.buy_asset("A", 10)
+        p.update_history()
+
+        # Advance to a period where price might differ — but our fixture
+        # uses constant price=100, so gains = 0. We still verify classification.
+        p.advance_period()
+        p.collect_income()
+
+        lot = p._tax_lots["A"][0]
+        p.sell_lot(lot, 5)
+
+        sells = p.transactions[p.transactions["type"] == "sell"]
+        # With constant price and no fees, gains are 0
+        assert sells.iloc[0]["short_term_gains"] == approx(0.0)
+        assert sells.iloc[0]["long_term_gains"] == approx(0.0)
+
+    def test_sell_lot_buffer_synced(self, portfolio):
+        """Buffer lot_quantity_remaining matches after sell_lot."""
+        portfolio.collect_income()
+        portfolio.move_cash(10000)
+        portfolio.buy_asset("A", 10)
+        buy_idx = portfolio._tax_lots["A"][0].txn_index
+
+        lot = portfolio._tax_lots["A"][0]
+        portfolio.sell_lot(lot, 3)
+
+        assert portfolio._txn_buffer[buy_idx]["lot_quantity_remaining"] == approx(7.0)
+
+    def test_sell_lot_bypasses_fifo_lifo(self, portfolio):
+        """sell_lot targets a specific lot, ignoring FIFO/LIFO ordering."""
+        portfolio.collect_income()
+        portfolio.move_cash(50000)
+        portfolio.buy_asset("A", 10)  # lot 0
+        portfolio.update_history()
+
+        portfolio.advance_period()
+        portfolio.collect_income()
+        portfolio.buy_asset("A", 10)  # lot 1
+
+        # Sell from lot 1 (second lot) — FIFO would sell lot 0 first
+        lot_1 = portfolio._tax_lots["A"][1]
+        portfolio.sell_lot(lot_1, 5)
+
+        # lot 0 is untouched, lot 1 partially consumed
+        assert portfolio._tax_lots["A"][0].quantity_remaining == approx(10.0)
+        assert portfolio._tax_lots["A"][1].quantity_remaining == approx(5.0)
+
+    def test_sell_lot_via_open_lots(self, portfolio):
+        """Strategies access lots through open_lots and pass to sell_lot."""
+        portfolio.collect_income()
+        portfolio.move_cash(50000)
+        portfolio.buy_asset("A", 10)
+        portfolio.update_history()
+
+        portfolio.advance_period()
+        portfolio.collect_income()
+        portfolio.buy_asset("A", 10)
+
+        # Strategy pattern: pick a lot from open_lots
+        open_lots = portfolio.open_lots["A"]
+        assert len(open_lots) == 2
+        portfolio.sell_lot(open_lots[1], 5)
+
+        assert open_lots[1].quantity_remaining == approx(5.0)

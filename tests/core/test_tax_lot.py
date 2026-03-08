@@ -74,14 +74,14 @@ class TestTaxLot:
     def test_construction(self):
         period = pd.Period("2020-01-01", freq="D")
         lot = TaxLot(
-            symbol="AAPL",
+            symbol="Stock",
             period=period,
             quantity=100.0,
             quantity_remaining=100.0,
             cost_basis_per_share=150.5,
             txn_index=0,
         )
-        assert lot.symbol == "AAPL"
+        assert lot.symbol == "Stock"
         assert lot.period == period
         assert lot.quantity == 100.0
         assert lot.quantity_remaining == 100.0

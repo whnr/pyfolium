@@ -139,7 +139,7 @@ class MomentumStrategy(BaseStrategy):
     def get_trades(self):
         # Return list of (symbol, quantity) tuples
         # Positive quantity = buy, negative = sell
-        return [('Stock', 10), ('GOOGL', -5)]
+        return [('Stock', 10), ('Aktie', -5)]
 
 # initial_cash and start_period are keyword-only params on BaseStrategy
 strategy = MomentumStrategy(portfolio, lookback=30, initial_cash=50000)

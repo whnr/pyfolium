@@ -165,6 +165,7 @@ If a change affects examples, update the files in `examples/` too.
 - Type hints: Preferred for public methods, using pandas-stubs for DataFrame typing
 - Pandas display: Tests configure unlimited column display for debugging
 - No backwards-facing comments in code (e.g. "no longer needed", "replaces old approach", "eliminates boilerplate"). Those belong in commit messages and changelogs, not in source files. Code is static; history lives in git.
+- If using placeholders for Asset names, never use `AAPL` and `GOOGL`. Use `Stock`, `Aktie`, etc.
 
 ## Project Structure
 

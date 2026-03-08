@@ -167,9 +167,10 @@ class TaxConfig(BaseModel):
         total_quantity = sum(ol.quantity_remaining for ol in all_open_lots)
         if total_quantity == 0:
             return lot.cost_basis_per_share
-        return sum(
-            ol.quantity_remaining * ol.cost_basis_per_share for ol in all_open_lots
-        ) / total_quantity
+        return (
+            sum(ol.quantity_remaining * ol.cost_basis_per_share for ol in all_open_lots)
+            / total_quantity
+        )
 
 
 class FeeConfig(BaseModel):
@@ -1127,9 +1128,7 @@ class Portfolio:
 
         # Snapshot open lots before the loop mutates quantity_remaining.
         # For AVERAGE cost basis, the average is computed once at sale time.
-        all_open_lots = [
-            ol for ol in self._tax_lots.get(symbol, []) if ol.is_open
-        ]
+        all_open_lots = [ol for ol in self._tax_lots.get(symbol, []) if ol.is_open]
 
         for lot, lot_quantity_sold in lots_to_sell:
             cost_basis = self.tax_config.effective_cost_basis(lot, all_open_lots)

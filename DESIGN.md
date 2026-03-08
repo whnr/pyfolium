@@ -35,7 +35,7 @@ This keeps the core engine simple: the Portfolio only knows about cash and asset
 Many backtesting frameworks have a special `risk_free_rate` parameter baked into the engine. This creates problems:
 
 1. **Rigidity** — the risk-free rate is hard-coded as a scalar or simple curve, when in reality it's a full time series with its own dynamics.
-2. **Inconsistency** — the risk-free "return" doesn't flow through the same tax/fee machinery as everything else. In reality, T-bill income is taxable.
+2. **Inconsistency** — the risk-free "return" doesn't flow through the same tax/fee machinery as everything else.
 3. **Scope creep** — once you have a risk-free rate parameter, you're one step from building Sharpe ratios and risk models into the engine itself.
 
 By modeling it as an asset, the risk-free rate gets the same treatment as everything else: it has a price history, it can generate income, transactions in it incur fees, and gains are taxed. A strategy that allocates to "risk-free" simply buys that asset. Analytics libraries downstream can compute Sharpe ratios using whatever risk-free series they prefer.
@@ -99,23 +99,10 @@ strategy = BuyAndHold(portfolio, initial_cash=50000)
 result = BacktestRunner(portfolio, strategy).run()
 ```
 
-This solves three problems at once:
+This solves two problems at once:
 
-- **No boilerplate.** The four-line ceremony (`collect_income` → `move_cash` → `update_history` → `advance_period`) disappears. The runner handles state-machine traversal.
 - **Warmup data.** A strategy that needs 200 days of moving-average data sets `start_period` to day 201. The runner fast-forwards there without processing empty periods.
 - **Cash stays a transaction.** The deposit still appears in the transaction log at the correct period. The invariant is preserved — the runner just automates the mechanics.
-
-The `clone()` workflow also simplifies — clone a portfolio, create different strategies with the same `initial_cash`, and compare:
-
-```python
-portfolio = Portfolio(universe)
-s1 = AggressiveStrategy(portfolio.clone(), initial_cash=100000)
-s2 = ConservativeStrategy(portfolio.clone(), initial_cash=100000)
-result1 = BacktestRunner(s1.portfolio, s1).run()
-result2 = BacktestRunner(s2.portfolio, s2).run()
-```
-
-See the review findings for implementation details.
 
 ### Immutability boundaries
 

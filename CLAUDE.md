@@ -205,3 +205,9 @@ Recent features:
 - **Comprehensive examples**: 7 usage patterns in examples/backtest_runner_example.py; benchmark in examples/benchmark.py
 
 See `.claude/review-findings.md` for the full architecture review and action plan.
+
+### Idea backlog
+
+- Stock split handling: Either normalization at load or full tracking through actual split transactions
+- Suport short selling which is a lot more complex than just selling what you don't have
+- Enabling quantity limits on assets. You can only own 100% of an asseet; E.g. 100% of all shares of a company

@@ -139,7 +139,7 @@ class MomentumStrategy(BaseStrategy):
     def get_trades(self):
         # Return list of (symbol, quantity) tuples
         # Positive quantity = buy, negative = sell
-        return [('Stock', 10), ('GOOGL', -5)]
+        return [('Stock', 10), ('Aktie', -5)]
 
 # initial_cash and start_period are keyword-only params on BaseStrategy
 strategy = MomentumStrategy(portfolio, lookback=30, initial_cash=50000)
@@ -211,7 +211,7 @@ uv run pre-commit run --all-files
 
 ```
 pyfolium/
-├── core.py         # Portfolio, Asset, AssetUniverse, configs
+├── core.py         # Portfolio, Asset, AssetUniverse, TaxLot, configs
 ├── strategy.py     # BaseStrategy ABC
 ├── simulation.py   # BacktestRunner, BacktestResult
 ├── logging.py      # Severity, LogEntry, OutputMode
@@ -241,10 +241,12 @@ COLLECT_INCOME → TRANSACT → DONE → advance_period() → COLLECT_INCOME
 4. `advance_period()` - Move to next period
 
 ### Tax Lot Tracking
+- `TaxLot` dataclass: first-class lot records with symbol, period, quantity, cost basis
 - FIFO or LIFO accounting for capital gains
 - Per-share cost basis tracking
 - Automatic short/long-term classification
 - Optional immediate tax withholding
+- `portfolio.open_lots` exposes open lots to strategies (e.g. tax-loss harvesting)
 
 ## Examples
 

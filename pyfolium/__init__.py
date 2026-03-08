@@ -12,6 +12,7 @@ from pyfolium.core import (
     PortfolioState,
     PriceMode,
     TaxConfig,
+    TaxLot,
 )
 from pyfolium.data import (
     load_from_csv,
@@ -31,6 +32,7 @@ __all__ = [
     "PriceMode",
     # Configuration
     "TaxConfig",
+    "TaxLot",
     "FeeConfig",
     # Simulation
     "BacktestRunner",

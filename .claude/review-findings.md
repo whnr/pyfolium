@@ -9,36 +9,8 @@
 
 ## P0 — Performance: Will break at scale
 
-### P0-2: Replace transaction `pd.concat` with pre-allocated buffer
-**File:** `pyfolium/core.py:492-496`
-**Problem:** Every `_register_transaction` call does `pd.concat` which copies the entire
-transaction history. O(n) per trade, O(n²) total.
-**Fix:**
-- Add `trade_fraction` parameter to Portfolio.__init__ (default 0.10)
-- Pre-allocate: `estimated_rows = n_periods * n_assets * trade_fraction`
-- Use write cursor: `self._txn_buffer.iloc[self._txn_cursor] = kwargs`
-- When buffer fills, grow by `estimated_rows` (amortized O(1))
-- Expose `transactions` as property: `return self._txn_buffer.iloc[:self._txn_cursor]`
-**Strategy interface:** Unchanged. `portfolio.transactions` returns a DataFrame.
-**Sizing math:** 5,200 periods × 500 assets × 0.10 = 260K rows × 15 cols ≈ 30MB. Trivial.
-**Alternative (if iloc assignment is still slow):** Columnar numpy arrays with lazy DataFrame build.
-Profile first before going there.
-
-### P0-3: Tax lot tracker as first-class data structure
-**File:** `pyfolium/core.py:711-716` (sell_asset), `575-578` (collect_income)
-**Problem:** Every sell and every income collection scans the ENTIRE transaction log
-to find matching buy lots via DataFrame boolean indexing.
-**Fix:**
-- Add `TaxLot` dataclass: `period, quantity, remaining, cost_basis_per_share, lot_id`
-- Add `self._open_lots: dict[str, list[TaxLot]]` to Portfolio
-- In `buy_asset`: append to `self._open_lots[symbol]`
-- In `sell_asset`/`collect_income`: read from `self._open_lots[symbol]` (O(1) lookup)
-- **IMPORTANT**: Expose to strategies (not internal-only!) — see P1-5 for `sell_lot()`
-**Strategy interface:** New `portfolio.open_lots["Stock"]` for fast lot access.
-New `portfolio.open_lots_df` property for DataFrame view.
-**Why exposed:** Specific lot identification is required for tax-loss harvesting strategies.
-The US allows selective lot selling; FIFO/LIFO are just defaults.
-**Design doc update:** Update `DESIGN.md` "Tax lot tracking" section once implemented.
+### ~~P0-2: Replace transaction `pd.concat` with pre-allocated buffer~~ ✓ DONE
+### ~~P0-3: Tax lot tracker as first-class data structure~~ ✓ DONE
 
 ---
 
@@ -96,10 +68,19 @@ or fix the comment. For production, freezing is safer.
 Consider having `step()` return the trades list or a StepResult for introspection.
 Low priority — strategies can inspect `trades_df`.
 
-### `collect_income` recomputes `earliest_long_term_period` inside loop
-**File:** `pyfolium/core.py:582-585`
-Move computation outside the `for symbol in symbols` loop.
-Minor optimization but easy fix.
+### ~~Verbosity / observability model for different consumers~~ ✓ DONE
+Implemented as `OutputMode(StrEnum)` in `pyfolium/logging.py` with `SILENT`, `SUMMARY`,
+`PROGRESS`. `STRUCTURED` was dropped — `result.log_df` serves the programmatic/LLM use case
+without a separate output mode. `RICH` mode (multi-bar for parallel optimization) planned as
+Phase 3. See `.claude/logging-spec.md` and `DESIGN.md` "Observability" section.
+
+### ~~Logging architecture~~ ✓ DONE
+Implemented in `c97e900`. `BacktestRunner._log: list[LogEntry]` with structured entries.
+`BacktestResult` exposes `.log`, `.log_df`, `.errors`, `.warnings`, `.success`.
+`BaseStrategy.log()` + drain pattern for strategy-authored entries.
+See `.claude/logging-spec.md` for full design rationale.
+
+### ~~`collect_income` recomputes `earliest_long_term_period` inside loop~~ ✓ DONE (P0-2/P0-3 refactor)
 
 ### Tax/fee config extensibility (template pattern)
 **Files:** `pyfolium/core.py` (TaxConfig, FeeConfig, Portfolio.sell_asset, Portfolio.collect_income)
@@ -131,10 +112,10 @@ Users should be able to subclass or replace them for their jurisdiction.
 
 Recommended sequence:
 
-6. ~~**P2-6** (trade failure warnings)~~ ✓ DONE
+6. ~~**P2-6** (trade failure warnings)~~ ✓ DONE — Subsumed by structured logging; summary WARNING emitted at backtest end when `trades_df` has failures.
 7. ~~**P2-7, P2-8, P2-9** (data.py cleanup)~~ ✓ DONE
-9. **P0-2** (transaction pre-allocation) — Core change, needs careful testing
-10. **P0-3 + P1-5** (lot tracker + sell_lot) — Feature addition + performance
+9. ~~**P0-2** (transaction pre-allocation)~~ ✓ DONE
+10. ~~**P0-3**~~ ✓ DONE — **P1-5** (sell_lot) — Feature addition, depends on P0-3
 11. **Tax/fee extensibility phase 1** — Extract tax methods from Portfolio into TaxConfig. Depends on P0-3.
 12. ~~**P1-4** (error recovery)~~ ✓ DONE
 13. ~~**Logging architecture**~~ ✓ DONE

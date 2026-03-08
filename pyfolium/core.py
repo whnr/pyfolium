@@ -1,6 +1,7 @@
 from copy import deepcopy
+from dataclasses import dataclass
 from enum import Enum
-from typing import cast
+from typing import Any
 
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
@@ -304,6 +305,36 @@ class AssetUniverse:
         )
 
 
+@dataclass(slots=True)
+class TaxLot:
+    """A single tax lot created by a purchase transaction.
+
+    Each call to ``buy_asset()`` creates one TaxLot. As shares are sold,
+    ``quantity_remaining`` is decremented. A lot with
+    ``quantity_remaining == 0`` is fully closed.
+
+    Attributes:
+        symbol: Asset symbol this lot belongs to.
+        period: Period when the lot was created (purchase date).
+        quantity: Original quantity purchased.
+        quantity_remaining: Shares not yet sold.
+        cost_basis_per_share: Per-share cost including fees.
+        txn_index: Index into the portfolio transaction buffer.
+    """
+
+    symbol: str
+    period: pd.Period
+    quantity: float
+    quantity_remaining: float
+    cost_basis_per_share: float
+    txn_index: int
+
+    @property
+    def is_open(self) -> bool:
+        """True if this lot still has unsold shares."""
+        return self.quantity_remaining > 0
+
+
 class PortfolioState(Enum):
     COLLECT_INCOME = "COLLECT_INCOME"
     TRANSACT = "TRANSACT"
@@ -394,13 +425,14 @@ class Portfolio:
         )
         self.history = self.history.astype(float)
 
-        self.transactions = pd.DataFrame(
-            columns=list(Portfolio.transaction_columns.keys())
-        )
-        self.transactions = self.transactions.astype(Portfolio.transaction_columns)  # type: ignore[arg-type]
-        self.transactions["period"] = self.transactions["period"].astype(
-            pd.PeriodDtype(freq=self.asset_universe.data_frequency)
-        )
+        # Transaction buffer: list of dicts with O(1) append.
+        # DataFrame is built lazily via the .transactions property.
+        # Schema defined by Portfolio.transaction_columns; not all keys
+        # are present in every entry (e.g. deposits lack "symbol").
+        self._txn_buffer: list[dict[str, Any]] = []
+        self._txn_period_index: dict[pd.Period, list[int]] = {}
+        self._tax_lots: dict[str, list[TaxLot]] = {}
+        self._txn_df_cache: pd.DataFrame | None = None
 
         self.holdings = pd.DataFrame(
             data=0.0, index=period_index, columns=self.asset_universe.asset_symbols_list
@@ -427,6 +459,44 @@ class Portfolio:
             f"Portfolio(period={self.current_period} [{state_label}] | "
             f"cash=${self.cash:,.2f} | holdings: {holdings_str} | {total_str})"
         )
+
+    @property
+    def transactions(self) -> pd.DataFrame:
+        """Transaction log as a DataFrame (built lazily from internal buffer).
+
+        Returns a DataFrame with the same schema as ``transaction_columns``.
+        The DataFrame is cached and rebuilt only when new transactions are
+        registered.
+        """
+        if self._txn_df_cache is None:
+            if not self._txn_buffer:
+                df = pd.DataFrame(columns=list(Portfolio.transaction_columns.keys()))
+                df = df.astype(Portfolio.transaction_columns)  # type: ignore[arg-type]
+                df["period"] = df["period"].astype(
+                    pd.PeriodDtype(freq=self.asset_universe.data_frequency)
+                )
+                self._txn_df_cache = df
+            else:
+                df = pd.DataFrame(self._txn_buffer)
+                # Ensure all schema columns exist (dicts may omit optional fields)
+                for col in Portfolio.transaction_columns:
+                    if col not in df.columns:
+                        df[col] = None
+                self._txn_df_cache = df[list(Portfolio.transaction_columns.keys())]
+        return self._txn_df_cache
+
+    @property
+    def open_lots(self) -> dict[str, list[TaxLot]]:
+        """Open tax lots grouped by symbol.
+
+        Returns only lots with ``quantity_remaining > 0``.  Useful for
+        strategies that need to inspect lot-level positions (e.g. for
+        tax-loss harvesting).
+        """
+        return {
+            symbol: [lot for lot in lots if lot.is_open]
+            for symbol, lots in self._tax_lots.items()
+        }
 
     def clone(self) -> "Portfolio":
         """Create an independent deep copy of the portfolio.
@@ -469,9 +539,12 @@ class Portfolio:
         cloned._current_period_idx = self._current_period_idx
         cloned.current_period = self.current_period
 
-        # Deep copy DataFrames (they are mutable)
+        # Deep copy DataFrames and buffer structures
         cloned.history = self.history.copy(deep=True)
-        cloned.transactions = self.transactions.copy(deep=True)
+        cloned._txn_buffer = deepcopy(self._txn_buffer)
+        cloned._txn_period_index = deepcopy(self._txn_period_index)
+        cloned._tax_lots = deepcopy(self._tax_lots)
+        cloned._txn_df_cache = None
         cloned.holdings = self.holdings.copy(deep=True)
         cloned._states = self._states.copy(deep=True)
 
@@ -494,12 +567,13 @@ class Portfolio:
             equity cannot be computed (only possible in STRICT mode) or
             if an asset is held past its end_time.
         """
-        holdings = self.holdings.loc[self.current_period]  # type: ignore[call-overload]
+        idx = self._current_period_idx
+        holdings = self.holdings.iloc[idx]
         if price_mode == PriceMode.LAST_VALID:
-            prices = self.asset_universe.price_matrix_ffill.loc[self.current_period]  # type: ignore[call-overload]
+            prices = self.asset_universe.price_matrix_ffill.iloc[idx]
             equity = float((holdings * prices).sum(skipna=False))
         else:
-            prices = self.asset_universe.price_matrix.loc[self.current_period]  # type: ignore[call-overload]
+            prices = self.asset_universe.price_matrix.iloc[idx]
             equity = float((holdings * prices).sum(skipna=False))
         if pd.isna(equity):
             return float("nan")
@@ -519,29 +593,31 @@ class Portfolio:
         return self.get_total_value()
 
     def _check_state(self, expected_state: PortfolioState) -> None:
-        current_state = self._states[self.current_period]  # type: ignore[call-overload]
+        current_state = self._states.iloc[self._current_period_idx]
         if current_state != expected_state:
             raise RuntimeError(
                 f"Portfolio is in the wrong state: {current_state.value}. "
                 f"Expected state: {expected_state.value}"
             )
 
-    def _register_transaction(self, **kwargs) -> None:
+    def _register_transaction(self, **kwargs) -> int:
         """Register a transaction in the portfolio.
 
         It will always register the transaction during the current period.
 
-        This will only register a transaction if it is valid.
+        This will only register a transaction if it is valid,
         before the cash balances or holdings are updated.
 
         Parameters:
             **kwargs: The transaction details. Must contain the following columns:
                 - type: The type of the transaction.
                   Must be one of `Portfolio.transaction_types`
-                - net_cash_value: The net value of the transaction.
-                  As seen from the cash balance.
+                - transaction_amount: The net cash flow of the transaction.
             Other columns from `Portfolio.transaction_columns`
             depend on the type of the transaction.
+
+        Returns:
+            Index of the new transaction in the internal buffer.
 
         Raises:
             KeyError: If the transaction does not contain the required columns
@@ -559,22 +635,21 @@ class Portfolio:
             missing = required_columns - set(transaction.keys())
             raise KeyError(f"Missing required columns: {missing}")
 
-        # Check if the transaction type is valid
         if transaction["type"] not in self.transaction_types:
             raise ValueError(f"Invalid transaction type: {transaction['type']}")
 
-        # Check if there are any unexpected columns in the transaction
         unexpected_columns = set(transaction.keys()) - set(
             Portfolio.transaction_columns
         )
         if unexpected_columns:
             raise KeyError(f"Unexpected columns in transaction: {unexpected_columns}")
 
-        # Concatenate the transaction to the transactions dataframe
-        self.transactions = pd.concat(
-            [self.transactions, pd.DataFrame([transaction]).dropna(axis=1, how="all")],
-            ignore_index=True,
-        )
+        idx = len(self._txn_buffer)
+        self._txn_buffer.append(transaction)
+        self._txn_period_index.setdefault(self.current_period, []).append(idx)
+        self._txn_df_cache = None
+
+        return idx
 
     def advance_period(self) -> None:
         """
@@ -586,15 +661,15 @@ class Portfolio:
         If the end of the history is reached, it raises a StopIteration.
 
         """
-        if self._states[self.current_period] != PortfolioState.DONE:  # type: ignore[call-overload]
+        if self._states.iloc[self._current_period_idx] != PortfolioState.DONE:
             raise RuntimeError("Last period was not in the DONE state.")
         if self._current_period_idx + 1 >= len(self.history.index):
             raise StopIteration("End of history reached")
-        previous_period = self.current_period
+        prev_idx = self._current_period_idx
         self._current_period_idx += 1
         self.current_period = self.history.index[self._current_period_idx]
-        # Carry forward holdings from the completed period
-        self.holdings.loc[self.current_period] = self.holdings.loc[previous_period]  # type: ignore[call-overload]
+        # Carry forward holdings from the completed period (iloc avoids label lookup)
+        self.holdings.iloc[self._current_period_idx] = self.holdings.iloc[prev_idx]
 
     def update_history(self) -> None:
         """Update the history of the portfolio for the current period.
@@ -611,20 +686,24 @@ class Portfolio:
         """
         self._check_state(PortfolioState.TRANSACT)
 
-        # get all transactoins for this period and summarize them
-        period_transactions = self.transactions[
-            self.transactions["period"] == self.current_period
+        indices = self._txn_period_index.get(self.current_period, [])
+        long_term_gains = sum(
+            self._txn_buffer[i].get("long_term_gains", 0) or 0 for i in indices
+        )
+        short_term_gains = sum(
+            self._txn_buffer[i].get("short_term_gains", 0) or 0 for i in indices
+        )
+        taxes_paid = sum(self._txn_buffer[i].get("tax_paid", 0) or 0 for i in indices)
+
+        self.history.iloc[self._current_period_idx] = [
+            self.cash,
+            self.tax_owed,
+            long_term_gains,
+            short_term_gains,
+            taxes_paid,
         ]
 
-        self.history.loc[self.current_period] = {
-            "cash": self.cash,
-            "tax_owed": self.tax_owed,
-            "long_term_gains_in_period": period_transactions["long_term_gains"].sum(),
-            "short_term_gains_in_period": period_transactions["short_term_gains"].sum(),
-            "taxes_paid_in_period": period_transactions["tax_paid"].sum(),
-        }
-
-        self._states[self.current_period] = PortfolioState.DONE  # type: ignore[call-overload]
+        self._states.iloc[self._current_period_idx] = PortfolioState.DONE
 
     def collect_income(self):
         """Collect all the income for the current period.
@@ -645,35 +724,27 @@ class Portfolio:
         """
         self._check_state(PortfolioState.COLLECT_INCOME)
 
-        income_this_period = (
-            self.asset_universe.income_matrix.loc[self.current_period].fillna(0)  # type: ignore[call-overload]
-        )
-        symbols = (
-            self.holdings.loc[self.current_period]  # type: ignore[call-overload]
-            * income_this_period
-        )
-        symbols = self.holdings.columns[symbols != 0]
+        idx = self._current_period_idx
+        income_this_period = self.asset_universe.income_matrix.iloc[idx].fillna(0)
+        current_holdings = self.holdings.iloc[idx]
+        symbols = self.holdings.columns[(current_holdings * income_this_period) != 0]
+
+        # Compute long-term cutoff once (same for all symbols in this period)
+        earliest_long_term_period = (
+            self.current_period.to_timestamp()
+            - self.tax_config.long_term_holding_period
+        ).to_period(self.asset_universe.data_frequency)
 
         for symbol in symbols:
-            # get the income — NaN means no data for this period, treat as zero
             income = income_this_period[symbol]
 
-            # filter transactions to this symbol only buy
-            tax_lots = self.transactions[
-                (self.transactions["type"] == "buy")
-                & (self.transactions["symbol"] == symbol)
-            ]
-            total_quantity = tax_lots["lot_quantity_remaining"].sum()
-
-            # filter tax lots to those that are long-term
-            earliest_long_term_period = (
-                self.current_period.to_timestamp()
-                - self.tax_config.long_term_holding_period
-            ).to_period(self.asset_universe.data_frequency)
-            long_term_quantity = tax_lots.loc[
-                tax_lots["period"] <= earliest_long_term_period,
-                "lot_quantity_remaining",
-            ].sum()
+            lots = self._tax_lots.get(symbol, [])
+            total_quantity = sum(lot.quantity_remaining for lot in lots)
+            long_term_quantity = sum(
+                lot.quantity_remaining
+                for lot in lots
+                if lot.period <= earliest_long_term_period
+            )
             short_term_quantity = total_quantity - long_term_quantity
 
             long_term_income = long_term_quantity * income
@@ -708,7 +779,7 @@ class Portfolio:
             self.tax_owed += tax_liability
             self.cash += transaction_amount
 
-        self._states[self.current_period] = PortfolioState.TRANSACT  # type: ignore[call-overload]
+        self._states.iloc[self._current_period_idx] = PortfolioState.TRANSACT
 
     def move_cash(self, amount: float):
         """Move cash in or out of the portfolio.
@@ -759,10 +830,11 @@ class Portfolio:
         if quantity <= 0:
             raise ValueError("Quantity must be positive")
 
-        raw_price = self.asset_universe.price_matrix.loc[
-            self.current_period, symbol  # type: ignore[index]
+        col_idx = self.holdings.columns.get_loc(symbol)
+        raw_price = self.asset_universe.price_matrix.iloc[
+            self._current_period_idx, col_idx  # type: ignore[call-overload]
         ]
-        if pd.isna(raw_price):
+        if pd.isna(raw_price):  # type: ignore[arg-type]
             raise ValueError(
                 f"Cannot buy {symbol} at {self.current_period}: "
                 "no price data for this period"
@@ -772,7 +844,7 @@ class Portfolio:
         cost_basis_per_share = price + fee / quantity
         transaction_amount = -(quantity * price + fee)
 
-        self._register_transaction(
+        txn_idx = self._register_transaction(
             type="buy",
             symbol=symbol,
             quantity=quantity,
@@ -783,7 +855,17 @@ class Portfolio:
             transaction_amount=transaction_amount,
         )
 
-        self.holdings.loc[self.current_period, symbol] += quantity  # type: ignore[index, operator]
+        lot = TaxLot(
+            symbol=symbol,
+            period=self.current_period,
+            quantity=quantity,
+            quantity_remaining=quantity,
+            cost_basis_per_share=cost_basis_per_share,
+            txn_index=txn_idx,
+        )
+        self._tax_lots.setdefault(symbol, []).append(lot)
+
+        self.holdings.iloc[self._current_period_idx, col_idx] += quantity  # type: ignore[operator]
 
         self.cash += transaction_amount
 
@@ -803,21 +885,17 @@ class Portfolio:
         """
         self._check_state(PortfolioState.TRANSACT)
 
-        tax_lots = self.transactions[
-            (self.transactions["type"] == "buy")
-            & (self.transactions["symbol"] == symbol)
-            & (self.transactions["lot_quantity_remaining"] > 0)
-            & (self.transactions["period"] <= self.current_period)
-        ]
+        lots = self._tax_lots.get(symbol, [])
+        open_lots = [lot for lot in lots if lot.is_open]
 
         if self.tax_config.tax_strategy == "FIFO":
-            tax_lots = tax_lots.sort_values("period")
+            open_lots.sort(key=lambda lot: lot.period)
         elif self.tax_config.tax_strategy == "LIFO":
-            tax_lots = tax_lots.sort_values("period", ascending=False)
+            open_lots.sort(key=lambda lot: lot.period, reverse=True)
         else:
             raise ValueError(f"Invalid tax strategy: {self.tax_config.tax_strategy}")
 
-        current_holding_quantity = tax_lots["lot_quantity_remaining"].sum()
+        current_holding_quantity = sum(lot.quantity_remaining for lot in open_lots)
 
         if quantity <= 0:
             raise ValueError("Quantity must be greater than 0")
@@ -827,10 +905,11 @@ class Portfolio:
                 f"{current_holding_quantity} for symbol {symbol}."
             )
         quantity_to_sell = quantity
-        raw_price = self.asset_universe.price_matrix.loc[
-            self.current_period, symbol  # type: ignore[index]
+        col_idx = self.holdings.columns.get_loc(symbol)
+        raw_price = self.asset_universe.price_matrix.iloc[
+            self._current_period_idx, col_idx  # type: ignore[call-overload]
         ]
-        if pd.isna(raw_price):
+        if pd.isna(raw_price):  # type: ignore[arg-type]
             raise ValueError(
                 f"Cannot sell {symbol} at {self.current_period}: "
                 "no price data for this period"
@@ -847,35 +926,28 @@ class Portfolio:
             - self.tax_config.long_term_holding_period
         ).to_period(self.asset_universe.data_frequency)
 
-        # sell tax lots until we run out of quantity_to_sell
-        for lot in tax_lots.index:
-            # get the basic transaction info
-            lot_quantity_remaining = float(
-                self.transactions.loc[lot, "lot_quantity_remaining"]
-            )
-            transaction_period = cast(pd.Period, self.transactions.loc[lot, "period"])
-            lot_cost_basis_per_share = float(
-                self.transactions.loc[lot, "cost_basis_per_share"]
+        for lot in open_lots:
+            lot_quantity_sold = min(quantity_to_sell, lot.quantity_remaining)
+            lot_gains = lot_quantity_sold * (
+                cost_basis_per_share - lot.cost_basis_per_share
             )
 
-            lot_quantity_sold = min(quantity_to_sell, lot_quantity_remaining)
-            lot_gains = lot_quantity_sold * (
-                cost_basis_per_share - lot_cost_basis_per_share
-            )
-            # check if this is a long term transaction
-            if transaction_period <= earliest_long_term_period:
+            if lot.period <= earliest_long_term_period:
                 long_term_gains += lot_gains
             else:
                 short_term_gains += lot_gains
 
-            if lot_quantity_remaining <= lot_quantity_sold:
-                quantity_to_sell -= lot_quantity_sold
-                self.transactions.loc[lot, "lot_quantity_remaining"] = 0
-            else:
-                self.transactions.loc[lot, "lot_quantity_remaining"] -= (
-                    lot_quantity_sold
-                )
-                quantity_to_sell = 0
+            lot.quantity_remaining -= lot_quantity_sold
+            # SYNC: TaxLot.quantity_remaining is the authoritative source;
+            # the buffer entry must mirror it so .transactions reflects
+            # partial sales. If the buffer schema changes, update this too.
+            self._txn_buffer[lot.txn_index]["lot_quantity_remaining"] = (
+                lot.quantity_remaining
+            )
+            self._txn_df_cache = None
+
+            quantity_to_sell -= lot_quantity_sold
+            if quantity_to_sell <= 0:
                 break
 
         tax_liability = (
@@ -903,7 +975,7 @@ class Portfolio:
             transaction_amount=transaction_amount,
         )
 
-        self.holdings.loc[self.current_period, symbol] -= quantity  # type: ignore[index, operator]
+        self.holdings.iloc[self._current_period_idx, col_idx] -= quantity  # type: ignore[operator]
 
         self.cash += transaction_amount
         self.tax_owed += tax_liability

@@ -54,17 +54,27 @@ class BaseStrategy(ABC):
         self._log: list[LogEntry] = []
 
         # Track all trade attempts and their execution
-        self.trades_df = pd.DataFrame(
-            index=pd.Index([], name="trade_id"),
-            columns=[
-                "period",
-                "symbol",
-                "quantity",
-                "executed_quantity",
-                "category",  # strategy-specific trade categorization
-                "success",
-            ],
-        )
+        self._trades_buffer: list[dict] = []
+        self._trades_df_cache: pd.DataFrame | None = None
+
+    @property
+    def trades_df(self) -> pd.DataFrame:
+        """DataFrame of all trade attempts (built lazily from internal buffer)."""
+        if self._trades_df_cache is None:
+            if not self._trades_buffer:
+                self._trades_df_cache = pd.DataFrame(
+                    columns=[
+                        "period",
+                        "symbol",
+                        "quantity",
+                        "executed_quantity",
+                        "category",
+                        "success",
+                    ],
+                )
+            else:
+                self._trades_df_cache = pd.DataFrame(self._trades_buffer)
+        return self._trades_df_cache
 
     def log(
         self,
@@ -112,15 +122,18 @@ class BaseStrategy(ABC):
         category: str = "",
         success: bool = True,
     ) -> None:
-        """Record trade attempt in trades_df"""
-        self.trades_df.loc[len(self.trades_df)] = {
-            "period": self.portfolio.current_period,  # type: ignore[dict-item]
-            "symbol": symbol,
-            "quantity": desired_quantity,
-            "executed_quantity": executed_quantity,
-            "category": category,
-            "success": success,
-        }
+        """Record trade attempt in trades_df."""
+        self._trades_buffer.append(
+            {
+                "period": self.portfolio.current_period,
+                "symbol": symbol,
+                "quantity": desired_quantity,
+                "executed_quantity": executed_quantity,
+                "category": category,
+                "success": success,
+            }
+        )
+        self._trades_df_cache = None
 
     def execute_trades(self, trades: list[tuple[str, float]]) -> None:
         """Execute a list of trades in the portfolio"""

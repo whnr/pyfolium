@@ -86,10 +86,10 @@ def test_execute_trades_calls_portfolio(strategy, mocker):
     mock_buy = mocker.patch.object(strategy.portfolio, "buy_asset")
     mock_sell = mocker.patch.object(strategy.portfolio, "sell_asset")
 
-    strategy.execute_trades([("Stock", 100), ("GOOGL", -50)])
+    strategy.execute_trades([("Stock", 100), ("Aktie", -50)])
 
     mock_buy.assert_called_once_with("Stock", 100)
-    mock_sell.assert_called_once_with("GOOGL", 50)
+    mock_sell.assert_called_once_with("Aktie", 50)
 
 
 def test_execute_trades_handles_valueerror(strategy, mocker):

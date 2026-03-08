@@ -242,11 +242,12 @@ COLLECT_INCOME → TRANSACT → DONE → advance_period() → COLLECT_INCOME
 
 ### Tax Lot Tracking
 - `TaxLot` dataclass: first-class lot records with symbol, period, quantity, cost basis
-- FIFO or LIFO accounting for capital gains
+- FIFO or LIFO accounting for capital gains via `sell_asset()`
+- Specific lot targeting via `sell_lot(lot, quantity)` for tax-loss harvesting
 - Per-share cost basis tracking
 - Automatic short/long-term classification
 - Optional immediate tax withholding
-- `portfolio.open_lots` exposes open lots to strategies (e.g. tax-loss harvesting)
+- `portfolio.open_lots` exposes open lots to strategies
 
 ## Examples
 

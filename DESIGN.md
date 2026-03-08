@@ -73,7 +73,7 @@ The Portfolio is the central object. It tracks:
 - **Holdings** — a DataFrame of position quantities indexed by period and asset symbol.
 - **Transactions** — a complete log of every buy, sell, and cash movement. Stored internally as a list-of-dicts buffer; exposed as a DataFrame via `portfolio.transactions`.
 - **History** — a per-period snapshot of the portfolio state (cash, holdings value, tax owed).
-- **Tax lots** — `TaxLot` dataclass instances tracking per-share cost basis for capital gains. Exposed via `portfolio.open_lots`.
+- **Tax lots** — `TaxLot` dataclass instances tracking per-share cost basis for capital gains. Exposed via `portfolio.open_lots`. Sold either via FIFO/LIFO order (`sell_asset()`) or by specific lot reference (`sell_lot()`).
 
 ### Why a single cash balance?
 
@@ -160,12 +160,18 @@ This is tracked in the review findings under the implementation roadmap.
 
 ### Tax lot tracking
 
-Each purchase creates a `TaxLot` dataclass — a first-class record of the lot's symbol, purchase period, original quantity, remaining quantity, and per-share cost basis. When selling, lots are consumed in FIFO or LIFO order. This enables:
+Each purchase creates a `TaxLot` dataclass — a first-class record of the lot's symbol, purchase period, original quantity, remaining quantity, and per-share cost basis. Lots can be consumed in two ways:
+
+1. **Default FIFO/LIFO order** via `sell_asset()`, which respects `TaxConfig.tax_strategy`
+2. **Specific lot targeting** via `sell_lot(lot, quantity)`, which accepts a `TaxLot` from `portfolio.open_lots` and sells from it directly, bypassing FIFO/LIFO ordering
+
+Both methods share `_execute_lot_sales()` for tax/fee/gain calculation. This enables:
 
 - Accurate capital gains calculation for any holding period
 - Short-term vs long-term gain classification
-- Strategy-level lot inspection via `portfolio.open_lots` (e.g. for tax-loss harvesting)
-- Future: specific lot identification via `sell_lot()` and custom lot selection via `TaxConfig.select_lots()`
+- Strategy-level lot inspection via `portfolio.open_lots`
+- Tax-loss harvesting via `sell_lot()` (select specific lots with losses)
+- Future: custom lot selection via `TaxConfig.select_lots()`
 
 ### Transaction buffer
 

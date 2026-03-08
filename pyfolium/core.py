@@ -33,6 +33,9 @@ class TaxConfig(BaseModel):
         long_term_rate: Tax rate for long-term capital gains (0.0 to 1.0)
         withhold_tax: Whether to withhold tax immediately on gains
         tax_strategy: Tax lot selection strategy ("FIFO" or "LIFO")
+        allow_specific_lot: Whether sell_lot() is permitted (True by default).
+            Set to False for jurisdictions that mandate FIFO/LIFO ordering
+            (e.g. German Abgeltungssteuer).
 
     Note:
         Current limitation: When you withhold tax but sell at a loss,
@@ -46,6 +49,7 @@ class TaxConfig(BaseModel):
     long_term_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     withhold_tax: bool = False
     tax_strategy: str = Field(default="FIFO", pattern="^(FIFO|LIFO)$")
+    allow_specific_lot: bool = True
 
     model_config = {"arbitrary_types_allowed": True}  # Allow pd.DateOffset
 
@@ -1026,6 +1030,13 @@ class Portfolio:
                 does not belong to this portfolio.
         """
         self._check_state(PortfolioState.TRANSACT)
+
+        if not self.tax_config.allow_specific_lot:
+            raise ValueError(
+                "Tax configuration does not allow specific lot identification. "
+                "Use sell_asset() instead, which respects the configured "
+                f"{self.tax_config.tax_strategy} ordering."
+            )
 
         if quantity <= 0:
             raise ValueError("Quantity must be greater than 0")

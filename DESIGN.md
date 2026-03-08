@@ -142,6 +142,8 @@ The design intent is:
 - `calculate_tax(short_term_gains, long_term_gains)` — returns a `TaxResult` with `tax_liability` and `tax_paid`
 - `select_lots(lots)` — filters to open lots and sorts by FIFO/LIFO strategy
 
+TaxConfig also provides `allow_specific_lot` (default `True`), a policy flag that gates whether `sell_lot()` is available. This is a field-level control rather than a method override — it restricts which *API surface* the strategy can use, not how taxes are calculated.
+
 A `WashSaleTaxConfig` or `GermanTaxConfig` can subclass TaxConfig and override any of these methods without forking Portfolio.
 
 ### Tax lot tracking
@@ -149,7 +151,7 @@ A `WashSaleTaxConfig` or `GermanTaxConfig` can subclass TaxConfig and override a
 Each purchase creates a `TaxLot` dataclass — a first-class record of the lot's symbol, purchase period, original quantity, remaining quantity, and per-share cost basis. Lots can be consumed in two ways:
 
 1. **Default FIFO/LIFO order** via `sell_asset()`, which respects `TaxConfig.tax_strategy`
-2. **Specific lot targeting** via `sell_lot(lot, quantity)`, which accepts a `TaxLot` from `portfolio.open_lots` and sells from it directly, bypassing FIFO/LIFO ordering
+2. **Specific lot targeting** via `sell_lot(lot, quantity)`, which accepts a `TaxLot` from `portfolio.open_lots` and sells from it directly, bypassing FIFO/LIFO ordering. Gated by `TaxConfig.allow_specific_lot` (default `True`); jurisdictions that mandate strict FIFO/LIFO (e.g. German *Abgeltungssteuer*) set this to `False`
 
 Both methods share `_execute_lot_sales()` for tax/fee/gain calculation. This enables:
 

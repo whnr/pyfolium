@@ -101,7 +101,7 @@ This state machine is enforced via `PortfolioState` enum to prevent operations i
 - Tax lots tracked as `TaxLot` dataclass instances via `_tax_lots: dict[str, list[TaxLot]]`
 - Period index `_txn_period_index: dict[Period, list[int]]` for O(1) per-period transaction lookup
 - Current period tracked via `current_period` / `_current_period_idx`; hot paths use `.iloc` for performance
-- `sell_lot(lot, quantity)` sells from a specific TaxLot, bypassing FIFO/LIFO; shares `_execute_lot_sales()` with `sell_asset()`
+- `sell_lot(lot, quantity)` sells from a specific TaxLot, bypassing FIFO/LIFO; gated by `TaxConfig.allow_specific_lot`; shares `_execute_lot_sales()` with `sell_asset()`
 - `clone()` method creates independent copy for strategy comparison
 
 **BaseStrategy** (`pyfolium/strategy.py`): Abstract class for trading strategies
@@ -127,6 +127,7 @@ This state machine is enforced via `PortfolioState` enum to prevent operations i
 The tax system (`TaxConfig` in `pyfolium/core.py`) uses Pydantic for validation and owns all tax calculation logic via overridable methods:
 - Short-term vs long-term capital gains based on holding period
 - FIFO or LIFO tax lot accounting (validated at init)
+- `allow_specific_lot` flag gates `sell_lot()` access (default `True`); set to `False` for jurisdictions mandating FIFO/LIFO
 - Optional tax withholding on gains and income
 - Per-share cost basis tracking for partial lot sales
 - Tax rates validated to be between 0.0 and 1.0
@@ -213,7 +214,7 @@ Recent features:
 - **Pydantic validation**: TaxConfig and FeeConfig with automatic validation
 - **Data loading**: `load_from_csv` and `load_from_dataframe` utilities with explicit `income_column` (defaults to `None`; raises `ValueError` when an explicitly named column is missing) and `min_density` sanity check (default `0.5`) that catches frequency mismatches like monthly data loaded as daily
 - **Comprehensive examples**: 7 usage patterns in examples/backtest_runner_example.py; benchmark in examples/benchmark.py
-- **sell_lot() (P1-5)**: `sell_lot(lot, quantity)` sells from a specific `TaxLot` obtained via `portfolio.open_lots`, bypassing FIFO/LIFO ordering; enables tax-loss harvesting and tax-optimized strategies; shares `_execute_lot_sales()` helper with `sell_asset()`
+- **sell_lot() (P1-5)**: `sell_lot(lot, quantity)` sells from a specific `TaxLot` obtained via `portfolio.open_lots`, bypassing FIFO/LIFO ordering; gated by `TaxConfig.allow_specific_lot` (default `True`); enables tax-loss harvesting and tax-optimized strategies; shares `_execute_lot_sales()` helper with `sell_asset()`
 
 See `.claude/review-findings.md` for the full architecture review and action plan.
 

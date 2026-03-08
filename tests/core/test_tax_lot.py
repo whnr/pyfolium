@@ -670,3 +670,40 @@ class TestSellLot:
         portfolio.sell_lot(open_lots[1], 5)
 
         assert open_lots[1].quantity_remaining == approx(5.0)
+
+    def test_sell_lot_blocked_when_allow_specific_lot_false(self, universe):
+        """sell_lot raises ValueError when TaxConfig.allow_specific_lot is False."""
+        p = Portfolio(
+            universe,
+            tax_config=TaxConfig(allow_specific_lot=False),
+        )
+        p.collect_income()
+        p.move_cash(10000)
+        p.buy_asset("A", 10)
+
+        lot = p._tax_lots["A"][0]
+        with pytest.raises(ValueError, match="does not allow specific lot"):
+            p.sell_lot(lot, 5)
+
+    def test_sell_lot_allowed_by_default(self, portfolio):
+        """allow_specific_lot defaults to True, so sell_lot works normally."""
+        assert portfolio.tax_config.allow_specific_lot is True
+        portfolio.collect_income()
+        portfolio.move_cash(10000)
+        portfolio.buy_asset("A", 10)
+
+        lot = portfolio._tax_lots["A"][0]
+        portfolio.sell_lot(lot, 3)
+        assert lot.quantity_remaining == approx(7.0)
+
+    def test_sell_asset_unaffected_by_allow_specific_lot(self, universe):
+        """sell_asset works normally even when allow_specific_lot is False."""
+        p = Portfolio(
+            universe,
+            tax_config=TaxConfig(allow_specific_lot=False),
+        )
+        p.collect_income()
+        p.move_cash(10000)
+        p.buy_asset("A", 10)
+        p.sell_asset("A", 5)
+        assert p.holdings.iloc[0]["A"] == approx(5.0)

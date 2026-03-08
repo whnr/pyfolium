@@ -7,10 +7,25 @@ import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 
 
+@dataclass(frozen=True, slots=True)
+class TaxResult:
+    """Result of a tax calculation.
+
+    Attributes:
+        tax_liability: Amount added to ``tax_owed`` (may be negative for losses).
+        tax_paid: Amount withheld from cash (0 when not withholding or on losses).
+    """
+
+    tax_liability: float
+    tax_paid: float
+
+
 class TaxConfig(BaseModel):
     """Configuration for tax calculations with validation.
 
     This config uses Pydantic for automatic validation of tax rates and strategies.
+    Calculation methods can be overridden in subclasses for custom tax rules
+    (e.g. wash sales, jurisdiction-specific logic).
 
     Attributes:
         short_term_rate: Tax rate for short-term capital gains (0.0 to 1.0)
@@ -33,6 +48,97 @@ class TaxConfig(BaseModel):
     tax_strategy: str = Field(default="FIFO", pattern="^(FIFO|LIFO)$")
 
     model_config = {"arbitrary_types_allowed": True}  # Allow pd.DateOffset
+
+    def long_term_cutoff_period(
+        self,
+        current_period: pd.Period,
+        data_frequency: str,
+    ) -> pd.Period:
+        """Compute the earliest period that qualifies as long-term.
+
+        A lot purchased on or before this period is classified as long-term.
+
+        Args:
+            current_period: The period of the sale or income event.
+            data_frequency: Frequency string (e.g. ``'D'``, ``'M'``).
+
+        Returns:
+            The cutoff period. Lots with ``period <= cutoff`` are long-term.
+        """
+        return (
+            current_period.to_timestamp() - self.long_term_holding_period
+        ).to_period(data_frequency)
+
+    def classify_gain(
+        self,
+        purchase_period: pd.Period,
+        current_period: pd.Period,
+        data_frequency: str,
+    ) -> str:
+        """Classify a gain as short-term or long-term based on holding period.
+
+        Args:
+            purchase_period: When the lot was acquired.
+            current_period: When the sale or income event occurs.
+            data_frequency: Frequency string for Period conversion.
+
+        Returns:
+            ``"long_term"`` if held long enough, otherwise ``"short_term"``.
+        """
+        cutoff = self.long_term_cutoff_period(current_period, data_frequency)
+        if purchase_period <= cutoff:
+            return "long_term"
+        return "short_term"
+
+    def calculate_tax(
+        self,
+        short_term_gains: float,
+        long_term_gains: float,
+    ) -> TaxResult:
+        """Calculate tax liability and withholding for given gains.
+
+        Applies ``short_term_rate`` and ``long_term_rate`` to the respective
+        gains. If ``withhold_tax`` is ``True`` and the liability is positive,
+        the full liability is withheld (paid immediately).
+
+        Args:
+            short_term_gains: Total short-term capital gains or income.
+            long_term_gains: Total long-term capital gains or income.
+
+        Returns:
+            A :class:`TaxResult` with ``tax_liability`` and ``tax_paid``.
+        """
+        raw_liability = (
+            long_term_gains * self.long_term_rate
+            + short_term_gains * self.short_term_rate
+        )
+        if raw_liability <= 0.0:
+            return TaxResult(tax_liability=raw_liability, tax_paid=0.0)
+        if self.withhold_tax:
+            return TaxResult(tax_liability=0.0, tax_paid=raw_liability)
+        return TaxResult(tax_liability=raw_liability, tax_paid=0.0)
+
+    def select_lots(self, lots: list["TaxLot"]) -> list["TaxLot"]:
+        """Return open lots ordered by the configured tax strategy.
+
+        Args:
+            lots: All lots for a given symbol (open and closed).
+
+        Returns:
+            A new list containing only open lots, sorted by the tax strategy
+            (FIFO: ascending by period, LIFO: descending by period).
+
+        Raises:
+            ValueError: If ``tax_strategy`` is not recognized.
+        """
+        open_lots = [lot for lot in lots if lot.is_open]
+        if self.tax_strategy == "FIFO":
+            open_lots.sort(key=lambda lot: lot.period)
+        elif self.tax_strategy == "LIFO":
+            open_lots.sort(key=lambda lot: lot.period, reverse=True)
+        else:
+            raise ValueError(f"Invalid tax strategy: {self.tax_strategy}")
+        return open_lots
 
 
 class FeeConfig(BaseModel):
@@ -729,11 +835,9 @@ class Portfolio:
         current_holdings = self.holdings.iloc[idx]
         symbols = self.holdings.columns[(current_holdings * income_this_period) != 0]
 
-        # Compute long-term cutoff once (same for all symbols in this period)
-        earliest_long_term_period = (
-            self.current_period.to_timestamp()
-            - self.tax_config.long_term_holding_period
-        ).to_period(self.asset_universe.data_frequency)
+        cutoff = self.tax_config.long_term_cutoff_period(
+            self.current_period, self.asset_universe.data_frequency
+        )
 
         for symbol in symbols:
             income = income_this_period[symbol]
@@ -741,30 +845,23 @@ class Portfolio:
             lots = self._tax_lots.get(symbol, [])
             total_quantity = sum(lot.quantity_remaining for lot in lots)
             long_term_quantity = sum(
-                lot.quantity_remaining
-                for lot in lots
-                if lot.period <= earliest_long_term_period
+                lot.quantity_remaining for lot in lots if lot.period <= cutoff
             )
             short_term_quantity = total_quantity - long_term_quantity
 
             long_term_income = long_term_quantity * income
             short_term_income = short_term_quantity * income
 
-            tax_liability = (
-                long_term_income * self.tax_config.long_term_rate
-                + short_term_income * self.tax_config.short_term_rate
-            )
-
-            tax_paid = 0.0
-            # If we have negative income, we don't pay any taxes
-            # If we are short on a position we will also have to pay money
             if total_quantity * income < 0.0:
-                tax_liability = 0.0
-            elif self.tax_config.withhold_tax:
-                tax_paid = tax_liability
-                tax_liability = 0.0
+                tax_result = TaxResult(tax_liability=0.0, tax_paid=0.0)
+            else:
+                tax_result = self.tax_config.calculate_tax(
+                    short_term_income, long_term_income
+                )
 
-            transaction_amount = short_term_income + long_term_income - tax_paid
+            transaction_amount = (
+                short_term_income + long_term_income - tax_result.tax_paid
+            )
 
             self._register_transaction(
                 type="income",
@@ -772,11 +869,11 @@ class Portfolio:
                 quantity=total_quantity,
                 long_term_gains=long_term_income,
                 short_term_gains=short_term_income,
-                tax_paid=tax_paid,
+                tax_paid=tax_result.tax_paid,
                 transaction_amount=transaction_amount,
             )
 
-            self.tax_owed += tax_liability
+            self.tax_owed += tax_result.tax_liability
             self.cash += transaction_amount
 
         self._states.iloc[self._current_period_idx] = PortfolioState.TRANSACT
@@ -886,14 +983,7 @@ class Portfolio:
         self._check_state(PortfolioState.TRANSACT)
 
         lots = self._tax_lots.get(symbol, [])
-        open_lots = [lot for lot in lots if lot.is_open]
-
-        if self.tax_config.tax_strategy == "FIFO":
-            open_lots.sort(key=lambda lot: lot.period)
-        elif self.tax_config.tax_strategy == "LIFO":
-            open_lots.sort(key=lambda lot: lot.period, reverse=True)
-        else:
-            raise ValueError(f"Invalid tax strategy: {self.tax_config.tax_strategy}")
+        open_lots = self.tax_config.select_lots(lots)
 
         current_holding_quantity = sum(lot.quantity_remaining for lot in open_lots)
 
@@ -921,10 +1011,9 @@ class Portfolio:
         long_term_gains = 0.0
         short_term_gains = 0.0
 
-        earliest_long_term_period = (
-            self.current_period.to_timestamp()
-            - self.tax_config.long_term_holding_period
-        ).to_period(self.asset_universe.data_frequency)
+        cutoff = self.tax_config.long_term_cutoff_period(
+            self.current_period, self.asset_universe.data_frequency
+        )
 
         for lot in open_lots:
             lot_quantity_sold = min(quantity_to_sell, lot.quantity_remaining)
@@ -932,7 +1021,7 @@ class Portfolio:
                 cost_basis_per_share - lot.cost_basis_per_share
             )
 
-            if lot.period <= earliest_long_term_period:
+            if lot.period <= cutoff:
                 long_term_gains += lot_gains
             else:
                 short_term_gains += lot_gains
@@ -950,16 +1039,8 @@ class Portfolio:
             if quantity_to_sell <= 0:
                 break
 
-        tax_liability = (
-            long_term_gains * self.tax_config.long_term_rate
-            + short_term_gains * self.tax_config.short_term_rate
-        )
-        tax_paid = 0.0
-        if tax_liability <= 0.0:
-            pass
-        elif self.tax_config.withhold_tax:
-            tax_paid = tax_liability
-            tax_liability = 0.0
+        tax_result = self.tax_config.calculate_tax(short_term_gains, long_term_gains)
+        tax_paid = tax_result.tax_paid
 
         transaction_amount = quantity * price - fee - tax_paid
 
@@ -978,7 +1059,7 @@ class Portfolio:
         self.holdings.iloc[self._current_period_idx, col_idx] -= quantity  # type: ignore[operator]
 
         self.cash += transaction_amount
-        self.tax_owed += tax_liability
+        self.tax_owed += tax_result.tax_liability
 
     def pay_tax(self, amount: float | None = None):
         """Pay taxes owed.

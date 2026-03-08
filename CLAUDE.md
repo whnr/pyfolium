@@ -123,12 +123,20 @@ This state machine is enforced via `PortfolioState` enum to prevent operations i
 
 ### Tax System
 
-The tax system (`TaxConfig` in `pyfolium/core.py`) uses Pydantic for validation and supports:
+The tax system (`TaxConfig` in `pyfolium/core.py`) uses Pydantic for validation and owns all tax calculation logic via overridable methods:
 - Short-term vs long-term capital gains based on holding period
 - FIFO or LIFO tax lot accounting (validated at init)
 - Optional tax withholding on gains and income
 - Per-share cost basis tracking for partial lot sales
 - Tax rates validated to be between 0.0 and 1.0
+
+`TaxConfig` methods (subclassable for custom tax rules):
+- `long_term_cutoff_period(current_period, data_frequency)` → `pd.Period` cutoff
+- `classify_gain(purchase_period, current_period, data_frequency)` → `"short_term"` | `"long_term"`
+- `calculate_tax(short_term_gains, long_term_gains)` → `TaxResult(tax_liability, tax_paid)`
+- `select_lots(lots)` → filtered and sorted `list[TaxLot]`
+
+`TaxResult` is a frozen dataclass returned by `calculate_tax`, containing `tax_liability` (added to `tax_owed`) and `tax_paid` (withheld from cash).
 
 ### Fee System
 
@@ -171,7 +179,7 @@ If a change affects examples, update the files in `examples/` too.
 
 ```
 pyfolium/
-├── core.py         # Asset, AssetUniverse, Portfolio, TaxLot, TaxConfig, FeeConfig
+├── core.py         # Asset, AssetUniverse, Portfolio, TaxLot, TaxResult, TaxConfig, FeeConfig
 ├── strategy.py     # BaseStrategy ABC
 ├── simulation.py   # BacktestRunner, BacktestResult
 ├── logging.py      # Severity, LogEntry, OutputMode
@@ -194,6 +202,7 @@ strategies/         # User-defined strategies (empty, for users to populate)
 ## Current State
 
 Recent features:
+- **Tax extensibility (P1)**: `TaxConfig` owns tax calculation via four overridable methods (`long_term_cutoff_period`, `classify_gain`, `calculate_tax`, `select_lots`); `TaxResult` frozen dataclass for structured return values; Portfolio delegates to TaxConfig methods instead of hardcoding tax math; users can subclass TaxConfig for custom rules (wash sales, jurisdiction-specific logic)
 - **Transaction buffer + TaxLot (P0-2/P0-3)**: Transactions stored as `list[dict]` with lazy DataFrame via `.transactions` property; `TaxLot` dataclass for O(1) lot lookups in `sell_asset`/`collect_income`; period index for O(1) `update_history`; hot paths use `.iloc` instead of `.loc`; `portfolio.open_lots` exposes lots to strategies; benchmark: 1.83x speedup (137→251 periods/sec on 100-asset, 50yr daily simulation)
 - **Structured logging**: `Severity`, `LogEntry`, `OutputMode` in `pyfolium/logging.py`; `BacktestRunner` captures structured log entries; `BaseStrategy.log()` lets strategies emit entries drained by the runner; `BacktestResult` exposes `.log`, `.log_df`, `.errors`, `.warnings`, `.success`; `OutputMode` enum (`SILENT`/`SUMMARY`/`PROGRESS`) controls terminal output
 - **Strategy start conditions**: `BaseStrategy` accepts `initial_cash` and `start_period` keyword args; `BacktestRunner` injects cash on the first active period and resolves start period with precedence: runner arg > `strategy.start_period` > `portfolio.current_period`

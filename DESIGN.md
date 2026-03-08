@@ -149,14 +149,13 @@ The design intent is:
    - `FeeConfig.calculate_fee(transaction_value) → float` is the fee interface.
    - Tax config needs a similar pattern: the tax calculation logic that currently lives in Portfolio's sell and income paths should be delegable to the config.
 
-**Current state:** FeeConfig is partially there — it owns `calculate_fee()`. TaxConfig is purely declarative (rates and strategy name), with the actual gain classification, lot selection, and withholding logic hardcoded in Portfolio. This coupling needs to loosen so that a `WashSaleTaxConfig` or `GermanTaxConfig` can override the tax calculation without forking Portfolio.
+**Current state:** Both FeeConfig and TaxConfig own their calculation logic. FeeConfig has `calculate_fee()`. TaxConfig provides four methods that Portfolio delegates to:
+- `long_term_cutoff_period(current_period, data_frequency)` — computes the holding period boundary
+- `classify_gain(purchase_period, current_period, data_frequency)` — returns `"short_term"` or `"long_term"`
+- `calculate_tax(short_term_gains, long_term_gains)` — returns a `TaxResult` with `tax_liability` and `tax_paid`
+- `select_lots(lots)` — filters to open lots and sorts by FIFO/LIFO strategy
 
-**Direction:** Extract tax calculation methods into TaxConfig (or a companion TaxCalculator), so that:
-- The default TaxConfig keeps today's simple behavior
-- Subclasses can override lot selection (specific lot ID), gain classification (wash sale adjustments), or withholding logic (jurisdiction-specific rules)
-- Portfolio calls the config's methods rather than implementing tax math directly
-
-This is tracked in the review findings under the implementation roadmap.
+A `WashSaleTaxConfig` or `GermanTaxConfig` can subclass TaxConfig and override any of these methods without forking Portfolio.
 
 ### Tax lot tracking
 
@@ -165,7 +164,8 @@ Each purchase creates a `TaxLot` dataclass — a first-class record of the lot's
 - Accurate capital gains calculation for any holding period
 - Short-term vs long-term gain classification
 - Strategy-level lot inspection via `portfolio.open_lots` (e.g. for tax-loss harvesting)
-- Future: specific lot identification via `sell_lot()` and custom lot selection via `TaxConfig.select_lots()`
+- Custom lot selection via `TaxConfig.select_lots()` (subclassable for specific lot ID strategies)
+- Future: specific lot identification via `sell_lot()`
 
 ### Transaction buffer
 

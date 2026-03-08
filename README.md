@@ -158,8 +158,8 @@ tax_config = TaxConfig(
     long_term_rate=0.15,
     long_term_holding_period=pd.DateOffset(years=1),
     withhold_tax=True,
-    tax_strategy='FIFO',  # or 'LIFO'
-    allow_specific_lot=True,  # False to block sell_lot()
+    tax_strategy='FIFO',  # or 'LIFO' or 'AVERAGE'
+    allow_specific_lot=False,  # True to enable sell_lot()
 )
 
 fee_config = FeeConfig(
@@ -243,7 +243,7 @@ COLLECT_INCOME → TRANSACT → DONE → advance_period() → COLLECT_INCOME
 
 ### Tax Lot Tracking
 - `TaxLot` dataclass: first-class lot records with symbol, period, quantity, cost basis
-- FIFO or LIFO accounting for capital gains via `sell_asset()`
+- FIFO, LIFO, or AVERAGE cost basis accounting via `sell_asset()`
 - Specific lot targeting via `sell_lot(lot, quantity)` for tax-loss harvesting (requires `allow_specific_lot=True`)
 - Per-share cost basis tracking
 - Automatic short/long-term classification

@@ -126,8 +126,8 @@ This state machine is enforced via `PortfolioState` enum to prevent operations i
 
 The tax system (`TaxConfig` in `pyfolium/core.py`) uses Pydantic for validation and owns all tax calculation logic via overridable methods:
 - Short-term vs long-term capital gains based on holding period
-- FIFO or LIFO tax lot accounting (validated at init)
-- `allow_specific_lot` flag gates `sell_lot()` access (default `True`); set to `False` for jurisdictions mandating FIFO/LIFO
+- FIFO, LIFO, or AVERAGE cost basis accounting (validated at init)
+- `allow_specific_lot` flag gates `sell_lot()` access (default `False`); set to `True` for jurisdictions allowing specific lot identification
 - Optional tax withholding on gains and income
 - Per-share cost basis tracking for partial lot sales
 - Tax rates validated to be between 0.0 and 1.0
@@ -137,6 +137,7 @@ The tax system (`TaxConfig` in `pyfolium/core.py`) uses Pydantic for validation 
 - `classify_gain(purchase_period, current_period, data_frequency)` → `"short_term"` | `"long_term"`
 - `calculate_tax(short_term_gains, long_term_gains)` → `TaxResult(tax_liability, tax_paid)`
 - `select_lots(lots)` → filtered and sorted `list[TaxLot]`
+- `effective_cost_basis(lot, all_open_lots)` → `float` (lot's own cost for FIFO/LIFO; weighted average for AVERAGE)
 
 `TaxResult` is a frozen dataclass returned by `calculate_tax`, containing `tax_liability` (added to `tax_owed`) and `tax_paid` (withheld from cash).
 

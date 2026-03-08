@@ -42,13 +42,14 @@ def universe_with_income():
 
 @pytest.fixture
 def portfolio(universe):
-    return Portfolio(universe)
+    return Portfolio(universe, tax_config=TaxConfig(allow_specific_lot=True))
 
 
 @pytest.fixture
 def portfolio_with_fees(universe):
     return Portfolio(
         universe,
+        tax_config=TaxConfig(allow_specific_lot=True),
         fee_config=FeeConfig(fixed_fee=1.0, percentage_fee=0.01),
     )
 
@@ -61,6 +62,7 @@ def portfolio_with_taxes(universe):
             short_term_rate=0.30,
             long_term_rate=0.15,
             withhold_tax=True,
+            allow_specific_lot=True,
         ),
     )
 
@@ -551,8 +553,9 @@ class TestSellLot:
 
     def test_sell_lot_wrong_portfolio(self, universe):
         """Selling a lot that doesn't belong to this portfolio raises ValueError."""
-        p1 = Portfolio(universe)
-        p2 = Portfolio(universe)
+        tc = TaxConfig(allow_specific_lot=True)
+        p1 = Portfolio(universe, tax_config=tc)
+        p2 = Portfolio(universe, tax_config=tc)
 
         p1.collect_income()
         p1.move_cash(10000)
@@ -685,8 +688,8 @@ class TestSellLot:
         with pytest.raises(ValueError, match="does not allow specific lot"):
             p.sell_lot(lot, 5)
 
-    def test_sell_lot_allowed_by_default(self, portfolio):
-        """allow_specific_lot defaults to True, so sell_lot works normally."""
+    def test_sell_lot_works_when_allow_specific_lot_true(self, portfolio):
+        """sell_lot works when allow_specific_lot is explicitly True."""
         assert portfolio.tax_config.allow_specific_lot is True
         portfolio.collect_income()
         portfolio.move_cash(10000)
@@ -695,6 +698,18 @@ class TestSellLot:
         lot = portfolio._tax_lots["A"][0]
         portfolio.sell_lot(lot, 3)
         assert lot.quantity_remaining == approx(7.0)
+
+    def test_sell_lot_blocked_by_default(self, universe):
+        """Default TaxConfig has allow_specific_lot=False, blocking sell_lot."""
+        p = Portfolio(universe)
+        assert p.tax_config.allow_specific_lot is False
+        p.collect_income()
+        p.move_cash(10000)
+        p.buy_asset("A", 10)
+
+        lot = p._tax_lots["A"][0]
+        with pytest.raises(ValueError, match="does not allow specific lot"):
+            p.sell_lot(lot, 3)
 
     def test_sell_asset_unaffected_by_allow_specific_lot(self, universe):
         """sell_asset works normally even when allow_specific_lot is False."""

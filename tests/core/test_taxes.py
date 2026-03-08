@@ -161,6 +161,13 @@ class TestSelectLots:
         periods = [lot.period for lot in result]
         assert periods == sorted(periods, reverse=True)
 
+    def test_average_ordering(self, lots):
+        """AVERAGE uses FIFO ordering (deterministic)."""
+        config = TaxConfig(tax_strategy="AVERAGE")
+        result = config.select_lots(lots)
+        periods = [lot.period for lot in result]
+        assert periods == sorted(periods)
+
     def test_filters_closed_lots(self, lots):
         lots[1].quantity_remaining = 0.0
         config = TaxConfig(tax_strategy="FIFO")
@@ -179,10 +186,70 @@ class TestSelectLots:
         assert result == []
 
 
+class TestEffectiveCostBasis:
+    """Tests for TaxConfig.effective_cost_basis()."""
+
+    @pytest.fixture
+    def lots(self):
+        return [
+            TaxLot(
+                symbol="S",
+                period=pd.Period("2024-01-01", freq="D"),
+                quantity=10.0,
+                quantity_remaining=10.0,
+                cost_basis_per_share=50.0,
+                txn_index=0,
+            ),
+            TaxLot(
+                symbol="S",
+                period=pd.Period("2024-02-01", freq="D"),
+                quantity=10.0,
+                quantity_remaining=10.0,
+                cost_basis_per_share=100.0,
+                txn_index=1,
+            ),
+        ]
+
+    def test_fifo_returns_lot_own_cost(self, lots):
+        config = TaxConfig(tax_strategy="FIFO")
+        assert config.effective_cost_basis(lots[0], lots) == 50.0
+        assert config.effective_cost_basis(lots[1], lots) == 100.0
+
+    def test_lifo_returns_lot_own_cost(self, lots):
+        config = TaxConfig(tax_strategy="LIFO")
+        assert config.effective_cost_basis(lots[0], lots) == 50.0
+        assert config.effective_cost_basis(lots[1], lots) == 100.0
+
+    def test_average_returns_weighted_mean(self, lots):
+        config = TaxConfig(tax_strategy="AVERAGE")
+        # (10*50 + 10*100) / 20 = 75.0
+        assert config.effective_cost_basis(lots[0], lots) == pytest.approx(75.0)
+        assert config.effective_cost_basis(lots[1], lots) == pytest.approx(75.0)
+
+    def test_average_with_unequal_quantities(self, lots):
+        lots[0].quantity_remaining = 30.0
+        lots[1].quantity_remaining = 10.0
+        config = TaxConfig(tax_strategy="AVERAGE")
+        # (30*50 + 10*100) / 40 = 62.5
+        assert config.effective_cost_basis(lots[0], lots) == pytest.approx(62.5)
+
+    def test_average_single_lot(self):
+        lot = TaxLot(
+            symbol="S",
+            period=pd.Period("2024-01-01", freq="D"),
+            quantity=10.0,
+            quantity_remaining=10.0,
+            cost_basis_per_share=80.0,
+            txn_index=0,
+        )
+        config = TaxConfig(tax_strategy="AVERAGE")
+        assert config.effective_cost_basis(lot, [lot]) == pytest.approx(80.0)
+
+
 def test_tax_config(tax_config):
     assert tax_config.short_term_rate == 0.2
     assert tax_config.long_term_rate == 0.1
     assert tax_config.long_term_holding_period == pd.DateOffset(years=1)
     assert tax_config.withhold_tax is False
     assert tax_config.tax_strategy == "FIFO"
-    assert tax_config.allow_specific_lot is True
+    assert tax_config.allow_specific_lot is False

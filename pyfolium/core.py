@@ -32,10 +32,10 @@ class TaxConfig(BaseModel):
         long_term_holding_period: Period to qualify for long-term gains
         long_term_rate: Tax rate for long-term capital gains (0.0 to 1.0)
         withhold_tax: Whether to withhold tax immediately on gains
-        tax_strategy: Tax lot selection strategy ("FIFO" or "LIFO")
-        allow_specific_lot: Whether sell_lot() is permitted (True by default).
-            Set to False for jurisdictions that mandate FIFO/LIFO ordering
-            (e.g. German Abgeltungssteuer).
+        tax_strategy: Tax lot selection strategy ("FIFO", "LIFO", or "AVERAGE")
+        allow_specific_lot: Whether sell_lot() is permitted (False by default).
+            Set to True for jurisdictions that allow specific lot identification
+            (e.g. US IRS specific identification method).
 
     Note:
         Current limitation: When you withhold tax but sell at a loss,
@@ -48,8 +48,8 @@ class TaxConfig(BaseModel):
     )
     long_term_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     withhold_tax: bool = False
-    tax_strategy: str = Field(default="FIFO", pattern="^(FIFO|LIFO)$")
-    allow_specific_lot: bool = True
+    tax_strategy: str = Field(default="FIFO", pattern="^(FIFO|LIFO|AVERAGE)$")
+    allow_specific_lot: bool = False
 
     model_config = {"arbitrary_types_allowed": True}  # Allow pd.DateOffset
 
@@ -136,13 +136,40 @@ class TaxConfig(BaseModel):
             ValueError: If ``tax_strategy`` is not recognized.
         """
         open_lots = [lot for lot in lots if lot.is_open]
-        if self.tax_strategy == "FIFO":
+        if self.tax_strategy in ("FIFO", "AVERAGE"):
             open_lots.sort(key=lambda lot: lot.period)
         elif self.tax_strategy == "LIFO":
             open_lots.sort(key=lambda lot: lot.period, reverse=True)
         else:
             raise ValueError(f"Invalid tax strategy: {self.tax_strategy}")
         return open_lots
+
+    def effective_cost_basis(
+        self,
+        lot: "TaxLot",
+        all_open_lots: list["TaxLot"],
+    ) -> float:
+        """Return the cost basis per share to use for gain calculation.
+
+        For FIFO/LIFO, this is the lot's own ``cost_basis_per_share``.
+        For AVERAGE, this is the weighted average cost across all open lots
+        for the symbol, computed at the time of sale.
+
+        Args:
+            lot: The specific lot being sold.
+            all_open_lots: All open lots for the same symbol.
+
+        Returns:
+            The effective cost basis per share.
+        """
+        if self.tax_strategy != "AVERAGE":
+            return lot.cost_basis_per_share
+        total_quantity = sum(ol.quantity_remaining for ol in all_open_lots)
+        if total_quantity == 0:
+            return lot.cost_basis_per_share
+        return sum(
+            ol.quantity_remaining * ol.cost_basis_per_share for ol in all_open_lots
+        ) / total_quantity
 
 
 class FeeConfig(BaseModel):
@@ -1098,10 +1125,15 @@ class Portfolio:
             self.current_period, self.asset_universe.data_frequency
         )
 
+        # Snapshot open lots before the loop mutates quantity_remaining.
+        # For AVERAGE cost basis, the average is computed once at sale time.
+        all_open_lots = [
+            ol for ol in self._tax_lots.get(symbol, []) if ol.is_open
+        ]
+
         for lot, lot_quantity_sold in lots_to_sell:
-            lot_gains = lot_quantity_sold * (
-                sell_basis_per_share - lot.cost_basis_per_share
-            )
+            cost_basis = self.tax_config.effective_cost_basis(lot, all_open_lots)
+            lot_gains = lot_quantity_sold * (sell_basis_per_share - cost_basis)
 
             if lot.period <= cutoff:
                 long_term_gains += lot_gains

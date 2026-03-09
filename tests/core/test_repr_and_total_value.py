@@ -164,7 +164,7 @@ class TestPortfolioRepr:
         assert str(portfolio_with_assets.current_period) in repr(portfolio_with_assets)
 
     def test_repr_contains_cash(self, portfolio_with_assets):
-        assert "cash=$" in repr(portfolio_with_assets)
+        assert "cash=" in repr(portfolio_with_assets)
 
     def test_repr_shows_holdings_none_when_empty(self, portfolio_with_assets):
         assert "holdings: none" in repr(portfolio_with_assets)

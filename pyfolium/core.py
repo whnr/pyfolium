@@ -315,7 +315,7 @@ class Asset:
         income_flag = "yes" if has_income else "no"
         return (
             f"Asset({self.symbol} | {self.start_time} → {self.end_time} | "
-            f"{n_periods} periods | price: ${price_min:.2f}–${price_max:.2f} | "
+            f"{n_periods} periods | price: {price_min:.2f}–{price_max:.2f} | "
             f"income: {income_flag})"
         )
 
@@ -537,7 +537,7 @@ class Portfolio:
             ValueError: If asset_universe is empty.
 
         Notes:
-            Portfolio starts at the first period in the universe with $0 cash.
+            Portfolio starts at the first period in the universe with 0 cash.
             Operations must follow the state machine order each period:
             collect_income → transact (buy/sell/move_cash) → update_history.
             Cash balances are not validated; you are responsible for ensuring
@@ -590,12 +590,12 @@ class Portfolio:
             holdings_str = ", ".join(f"{sym}:{qty:g}" for sym, qty in active.items())
         try:
             tv = self.get_total_value()
-            total_str = f"total≈${tv:,.2f}"
+            total_str = f"total≈{tv:,.2f}"
         except Exception:
             total_str = "total=N/A"
         return (
             f"Portfolio(period={self.current_period} [{state_label}] | "
-            f"cash=${self.cash:,.2f} | holdings: {holdings_str} | {total_str})"
+            f"cash={self.cash:,.2f} | holdings: {holdings_str} | {total_str})"
         )
 
     @property

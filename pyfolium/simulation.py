@@ -137,7 +137,7 @@ class BacktestRunner:
         With custom logging::
 
             def log_cash(runner):
-                print(f"{runner.current_period}: ${runner.portfolio.cash:,.2f}")
+                print(f"{runner.current_period}: {runner.portfolio.cash:,.2f}")
 
             runner = BacktestRunner(portfolio, strategy)
             runner.register_hook('period_end', log_cash)

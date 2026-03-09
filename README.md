@@ -33,8 +33,16 @@ pre-commit install
 
 ```python
 import pandas as pd
-from pyfolium import Asset, AssetUniverse, Portfolio, BacktestRunner, BaseStrategy
-from pyfolium import OutputMode
+
+from pyfolium import (
+    Asset,
+    AssetUniverse,
+    BacktestRunner,
+    BaseStrategy,
+    OutputMode,
+    Portfolio,
+)
+
 
 # 1. Create asset universe
 universe = AssetUniverse(data_frequency='D')
@@ -47,26 +55,29 @@ data = pd.DataFrame({
 }, index=dates)
 
 Asset('Stock', universe, data)
+print(f"{universe}\n")
 
 # 3. Define strategy — initial_cash seeds the portfolio on the first period
 class BuyAndHold(BaseStrategy):
-    def __init__(self, portfolio):
-        super().__init__(portfolio, initial_cash=50000)
+    def __init__(self, portfolio, initial_cash):
+        super().__init__(portfolio, initial_cash=initial_cash)
         self.invested = False
 
     def get_trades(self):
-        if not self.invested and self.portfolio.cash >= 10000:
+        if not self.invested:
             self.invested = True
-            return [('Stock', 100)]
+            price = self.asset_universe.price_matrix.loc[
+                    self.portfolio.current_period, 'Stock'
+                    ]
+            return [('Stock', self.initial_cash/price)]
         return []
 
-# 4. Create portfolio and run backtest — no manual cash seeding required
+# 4. Create portfolio and run backtest
 portfolio = Portfolio(universe)
-runner = BacktestRunner(portfolio, BuyAndHold(portfolio))
+runner = BacktestRunner(portfolio, BuyAndHold(portfolio, 50000))
 result = runner.run(output=OutputMode.PROGRESS)
-
-print(f"Final cash: ${result.portfolio.cash:,.2f}")
-print(f"Execution time: {result.execution_time:.2f}s")
+print(f"\nFinal portfolio value: {result.portfolio.total_value:,.2f}")
+print(portfolio)
 ```
 
 ## BacktestRunner
@@ -83,7 +94,7 @@ result = runner.run(output=OutputMode.PROGRESS)
 
 # Custom hooks (callback receives the runner instance)
 def log_value(runner):
-    print(f"Period {runner.current_period}: ${runner.portfolio.cash:,.2f}")
+    print(f"Period {runner.current_period}: {runner.portfolio.cash:,.2f}")
 
 runner.register_hook('period_end', log_value)
 result = runner.run()
@@ -122,8 +133,8 @@ clone2 = base.clone()
 result1 = BacktestRunner(clone1, Strategy1(clone1, initial_cash=100000)).run()
 result2 = BacktestRunner(clone2, Strategy2(clone2, initial_cash=100000)).run()
 
-print(f"Strategy 1: ${result1.portfolio.cash:,.2f}")
-print(f"Strategy 2: ${result2.portfolio.cash:,.2f}")
+print(f"Strategy 1: {result1.portfolio.cash:,.2f}")
+print(f"Strategy 2: {result2.portfolio.cash:,.2f}")
 ```
 
 ## Custom Strategies

@@ -133,10 +133,10 @@ The design intent is:
 2. **Users should be able to swap in their own implementations** — a user modeling US wash sale rules, German *Verlustverrechnungstöpfe* (loss offset pools), or a brokerage with tiered commission schedules should be able to provide their own tax or fee class that the Portfolio accepts without modification.
 
 3. **The interface is the contract, not the implementation** — Portfolio depends on *what* a tax/fee config provides (rates, lot ordering, fee calculation), not on *which specific class* provides it. This means:
-   - `FeeConfig.calculate_fee(transaction_value) → float` is the fee interface.
+   - `FeeConfig.calculate_fee(transaction_value, *, symbol, quantity, transaction_type) → float` is the fee interface. The keyword-only context parameters (`symbol`, `quantity`, `transaction_type`) enable tiered commissions, per-asset fee schedules, and buy/sell-asymmetric pricing in subclasses; the default implementation ignores them.
    - `TaxConfig` follows the same pattern: all tax calculation logic lives in the config, not in Portfolio's sell and income paths.
 
-Both FeeConfig and TaxConfig own their calculation logic. FeeConfig has `calculate_fee()`. TaxConfig provides five methods that Portfolio delegates to:
+Both FeeConfig and TaxConfig own their calculation logic. FeeConfig has `calculate_fee()` with trade context. TaxConfig provides five methods that Portfolio delegates to:
 - `long_term_cutoff_period(current_period, data_frequency)` — computes the holding period boundary
 - `classify_gain(purchase_period, current_period, data_frequency)` — returns `"short_term"` or `"long_term"`
 - `calculate_tax(short_term_gains, long_term_gains)` — returns a `TaxResult` with `tax_liability` and `tax_paid`

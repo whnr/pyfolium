@@ -101,7 +101,7 @@ Users should be able to subclass or replace them for their jurisdiction.
    - `select_lots(lots, strategy) → ordered_lots` (subsumes FIFO/LIFO + specific lot ID)
 2. **Phase 2:** Portfolio calls config methods instead of implementing tax math directly.
    Default TaxConfig keeps today's behavior. Subclasses override for wash sales, etc.
-3. **Phase 3:** Same pattern for FeeConfig if needed (tiered commissions, etc.)
+3. ~~**Phase 3:** Same pattern for FeeConfig if needed (tiered commissions, etc.)~~ ✓ DONE
 
 **Depends on:** P0-3 (tax lot data structure) for the lot selection interface.
 **Design doc:** See `DESIGN.md` "Configs as templates" section.

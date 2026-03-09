@@ -200,14 +200,29 @@ class FeeConfig(BaseModel):
             )
         return v
 
-    def calculate_fee(self, transaction_value: float) -> float:
+    def calculate_fee(
+        self,
+        transaction_value: float,
+        *,
+        symbol: str | None = None,
+        quantity: float | None = None,
+        transaction_type: str | None = None,
+    ) -> float:
         """Calculate the fee for a given transaction value.
 
+        The default implementation uses fixed + percentage fees with min/max
+        caps. Subclasses can override this method and use the keyword-only
+        context parameters to implement tiered commissions, per-asset fee
+        schedules, or buy/sell-asymmetric pricing.
+
         Args:
-            transaction_value: Absolute value of the transaction
+            transaction_value: Absolute value of the transaction.
+            symbol: Asset symbol being traded.
+            quantity: Number of shares/units in the trade.
+            transaction_type: ``"buy"`` or ``"sell"``.
 
         Returns:
-            Fee amount bounded by minimum_fee and maximum_fee
+            Fee amount bounded by minimum_fee and maximum_fee.
         """
         percentage_based = transaction_value * self.percentage_fee
         total_fee = self.fixed_fee + percentage_based
@@ -969,7 +984,12 @@ class Portfolio:
                 "no price data for this period"
             )
         price = float(raw_price)  # type: ignore[arg-type]
-        fee = self.fee_config.calculate_fee(quantity * price)
+        fee = self.fee_config.calculate_fee(
+            quantity * price,
+            symbol=symbol,
+            quantity=quantity,
+            transaction_type="buy",
+        )
         cost_basis_per_share = price + fee / quantity
         transaction_amount = -(quantity * price + fee)
 
@@ -1116,7 +1136,12 @@ class Portfolio:
                 "no price data for this period"
             )
         price = float(raw_price)  # type: ignore[arg-type]
-        fee = self.fee_config.calculate_fee(total_quantity * price)
+        fee = self.fee_config.calculate_fee(
+            total_quantity * price,
+            symbol=symbol,
+            quantity=total_quantity,
+            transaction_type="sell",
+        )
         sell_basis_per_share = price - fee / total_quantity
 
         long_term_gains = 0.0

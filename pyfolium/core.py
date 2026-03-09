@@ -641,8 +641,7 @@ class Portfolio:
 
         This method creates a complete copy of the portfolio with all its state,
         including transactions, holdings, history, and current position. The copy
-        shares the same AssetUniverse reference (universes are immutable), but all
-        mutable state is independent.
+        shares the same AssetUniverse reference, but all mutable state is independent.
 
         This is useful for:
         - Running multiple backtests with different strategies on identical
@@ -666,7 +665,7 @@ class Portfolio:
         """
         # Create a new portfolio instance with same universe and configs
         cloned = Portfolio(
-            asset_universe=self.asset_universe,  # Shared reference (immutable)
+            asset_universe=self.asset_universe,  # Shared reference
             fee_config=deepcopy(self.fee_config),
             tax_config=deepcopy(self.tax_config),
         )

@@ -5,32 +5,6 @@
 
 **After completion items will be deleted and can be recovered from git commit history.**
 
----
-
-## P0 — Performance: Will break at scale
-
-### ~~P0-2: Replace transaction `pd.concat` with pre-allocated buffer~~ ✓ DONE
-### ~~P0-3: Tax lot tracker as first-class data structure~~ ✓ DONE
-
----
-
-## P1 — Correctness bugs
-
-### P1-5: Add `sell_lot()` method for specific lot identification
-**File:** `pyfolium/core.py` (new method on Portfolio)
-**Problem:** Only FIFO/LIFO exist. US tax system allows specific lot identification.
-Tax-loss harvesting strategies need to choose which lot to sell.
-**Design:**
-```python
-def sell_lot(self, symbol: str, lot_id: int, quantity: float):
-    """Sell a specific tax lot by ID."""
-    lot = self._open_lots[symbol][lot_id]  # O(1)
-    # ... same tax/fee logic as sell_asset but for one specific lot
-```
-**Depends on:** P0-3 (lot tracker data structure)
-
----
-
 ## P4 — Make examples testable
 
 ### P4-1: Refactor examples to return values
@@ -57,37 +31,12 @@ correct results.
 
 ## Additional notes from review
 
-### AssetUniverse "immutable" documentation lie
-**File:** `pyfolium/core.py:405` (clone docstring)
-Comment says "Shared reference (immutable)" but AssetUniverse has `add_asset()`.
-**Decision needed:** Either make it actually immutable (freeze after Portfolio init)
-or fix the comment. For production, freezing is safer.
-
 ### Strategy `step()` returns nothing
 **File:** `pyfolium/strategy.py:78-81`
 Consider having `step()` return the trades list or a StepResult for introspection.
 Low priority — strategies can inspect `trades_df`.
 
-### ~~Verbosity / observability model for different consumers~~ ✓ DONE
-Implemented as `OutputMode(StrEnum)` in `pyfolium/logging.py` with `SILENT`, `SUMMARY`,
-`PROGRESS`. `STRUCTURED` was dropped — `result.log_df` serves the programmatic/LLM use case
-without a separate output mode. `RICH` mode (multi-bar for parallel optimization) planned as
-Phase 3. See `.claude/logging-spec.md` and `DESIGN.md` "Observability" section.
-
-### ~~Logging architecture~~ ✓ DONE
-Implemented in `c97e900`. `BacktestRunner._log: list[LogEntry]` with structured entries.
-`BacktestResult` exposes `.log`, `.log_df`, `.errors`, `.warnings`, `.success`.
-`BaseStrategy.log()` + drain pattern for strategy-authored entries.
-See `.claude/logging-spec.md` for full design rationale.
-
-### ~~`collect_income` recomputes `earliest_long_term_period` inside loop~~ ✓ DONE (P0-2/P0-3 refactor)
-
 ### Tax/fee config extensibility (template pattern)
-**Files:** `pyfolium/core.py` (TaxConfig, FeeConfig, Portfolio.sell_asset, Portfolio.collect_income)
-**Problem:** TaxConfig is purely declarative — rates and a strategy name string. All tax
-calculation logic (lot selection, gain classification, withholding) is hardcoded in Portfolio's
-sell and income paths. Users cannot swap in custom tax rules (wash sales, jurisdiction-specific
-logic) without modifying Portfolio itself.
 
 FeeConfig is better — it owns `calculate_fee()` — but still tightly coupled.
 

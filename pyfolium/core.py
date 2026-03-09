@@ -2,6 +2,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
+from typing import Any
 
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
@@ -58,7 +59,7 @@ class TaxConfig(BaseModel):
         current_period: pd.Period,
         data_frequency: str,
         *,
-        metadata: dict[str, str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> pd.Period:
         """Compute the earliest period that qualifies as long-term.
 
@@ -103,7 +104,7 @@ class TaxConfig(BaseModel):
         short_term_gains: float,
         long_term_gains: float,
         *,
-        metadata: dict[str, str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> TaxResult:
         """Calculate tax liability and withholding for given gains.
 
@@ -157,7 +158,7 @@ class TaxConfig(BaseModel):
         lot: "TaxLot",
         all_open_lots: list["TaxLot"],
         *,
-        metadata: dict[str, str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> float:
         """Return the cost basis per share to use for gain calculation.
 
@@ -219,7 +220,7 @@ class FeeConfig(BaseModel):
         symbol: str | None = None,
         quantity: float | None = None,
         transaction_type: str | None = None,
-        metadata: dict[str, str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> float:
         """Calculate the fee for a given transaction value.
 
@@ -270,7 +271,7 @@ class Asset:
         data: pd.DataFrame,
         price_column: str = "price",
         income_column: str | None = None,
-        metadata: dict[str, str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Initialize an Asset and register it with the given AssetUniverse.
 

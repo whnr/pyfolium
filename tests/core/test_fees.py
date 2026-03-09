@@ -1,3 +1,5 @@
+from typing import Any
+
 import pandas as pd
 import pytest
 
@@ -44,7 +46,7 @@ class TieredFeeConfig(FeeConfig):
         symbol: str | None = None,
         quantity: float | None = None,
         transaction_type: str | None = None,
-        metadata: dict[str, str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> float:
         # Tiered: 1% on first 1000, 0.5% on next 4000, 0.1% above 5000
         fee = 0.0
@@ -74,7 +76,7 @@ class AssetClassFeeConfig(FeeConfig):
         symbol: str | None = None,
         quantity: float | None = None,
         transaction_type: str | None = None,
-        metadata: dict[str, str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> float:
         asset_class = (metadata or {}).get("asset_class", "equity")
         if asset_class == "fixed_income":
@@ -92,7 +94,7 @@ class BuySellAsymmetricFeeConfig(FeeConfig):
         symbol: str | None = None,
         quantity: float | None = None,
         transaction_type: str | None = None,
-        metadata: dict[str, str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> float:
         if transaction_type == "sell":
             return transaction_value * 0.005  # 0.5% to sell

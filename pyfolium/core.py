@@ -207,6 +207,7 @@ class FeeConfig(BaseModel):
         symbol: str | None = None,
         quantity: float | None = None,
         transaction_type: str | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> float:
         """Calculate the fee for a given transaction value.
 
@@ -220,6 +221,8 @@ class FeeConfig(BaseModel):
             symbol: Asset symbol being traded.
             quantity: Number of shares/units in the trade.
             transaction_type: ``"buy"`` or ``"sell"``.
+            metadata: The traded asset's metadata dict (from
+                ``Asset.metadata``), or ``None`` if the asset has no metadata.
 
         Returns:
             Fee amount bounded by minimum_fee and maximum_fee.
@@ -989,6 +992,7 @@ class Portfolio:
             symbol=symbol,
             quantity=quantity,
             transaction_type="buy",
+            metadata=self.asset_universe.assets[symbol].metadata,
         )
         cost_basis_per_share = price + fee / quantity
         transaction_amount = -(quantity * price + fee)
@@ -1141,6 +1145,7 @@ class Portfolio:
             symbol=symbol,
             quantity=total_quantity,
             transaction_type="sell",
+            metadata=self.asset_universe.assets[symbol].metadata,
         )
         sell_basis_per_share = price - fee / total_quantity
 

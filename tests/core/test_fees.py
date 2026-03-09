@@ -44,6 +44,7 @@ class TieredFeeConfig(FeeConfig):
         symbol: str | None = None,
         quantity: float | None = None,
         transaction_type: str | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> float:
         # Tiered: 1% on first 1000, 0.5% on next 4000, 0.1% above 5000
         fee = 0.0
@@ -63,8 +64,8 @@ class TieredFeeConfig(FeeConfig):
         return fee
 
 
-class PerAssetFeeConfig(FeeConfig):
-    """Different fees per asset symbol."""
+class AssetClassFeeConfig(FeeConfig):
+    """Fee rates driven by the asset's ``asset_class`` metadata field."""
 
     def calculate_fee(
         self,
@@ -73,10 +74,12 @@ class PerAssetFeeConfig(FeeConfig):
         symbol: str | None = None,
         quantity: float | None = None,
         transaction_type: str | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> float:
-        if symbol == "Bond":
+        asset_class = (metadata or {}).get("asset_class", "equity")
+        if asset_class == "fixed_income":
             return transaction_value * 0.001  # 0.1% for bonds
-        return transaction_value * 0.01  # 1% for everything else
+        return transaction_value * 0.01  # 1% for equities
 
 
 class BuySellAsymmetricFeeConfig(FeeConfig):
@@ -89,6 +92,7 @@ class BuySellAsymmetricFeeConfig(FeeConfig):
         symbol: str | None = None,
         quantity: float | None = None,
         transaction_type: str | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> float:
         if transaction_type == "sell":
             return transaction_value * 0.005  # 0.5% to sell
@@ -117,15 +121,17 @@ def test_tiered_fee_zero():
     assert cfg.calculate_fee(0) == 0.0
 
 
-def test_per_asset_fee_uses_symbol():
-    cfg = PerAssetFeeConfig()
-    assert cfg.calculate_fee(10_000, symbol="Bond") == 10.0
-    assert cfg.calculate_fee(10_000, symbol="Stock") == 100.0
+def test_asset_class_fee_uses_metadata():
+    cfg = AssetClassFeeConfig()
+    bond_meta = {"asset_class": "fixed_income"}
+    equity_meta = {"asset_class": "equity"}
+    assert cfg.calculate_fee(10_000, metadata=bond_meta) == 10.0
+    assert cfg.calculate_fee(10_000, metadata=equity_meta) == 100.0
 
 
-def test_per_asset_fee_without_symbol_falls_back():
-    cfg = PerAssetFeeConfig()
-    # No symbol → default 1% path
+def test_asset_class_fee_without_metadata_falls_back():
+    cfg = AssetClassFeeConfig()
+    # No metadata → defaults to equity rate
     assert cfg.calculate_fee(10_000) == 100.0
 
 
@@ -147,72 +153,79 @@ def test_default_fee_config_ignores_context():
     # Without context
     assert cfg.calculate_fee(1000) == 15.0
     # With context — same result, kwargs are ignored
-    assert cfg.calculate_fee(1000, symbol="Stock", quantity=10) == 15.0
+    assert (
+        cfg.calculate_fee(
+            1000, symbol="Aktie", quantity=10, metadata={"asset_class": "equity"}
+        )
+        == 15.0
+    )
 
 
 # --- Integration: Portfolio passes context to FeeConfig ---
 
 
 @pytest.fixture
-def portfolio_with_per_asset_fees():
-    """Portfolio using PerAssetFeeConfig to verify context is passed."""
+def portfolio_with_asset_class_fees():
+    """Portfolio using AssetClassFeeConfig with metadata-tagged assets."""
     universe = AssetUniverse(data_frequency="D")
     periods = pd.period_range("2023-01-01", periods=3, freq="D")
 
     Asset(
-        symbol="Stock",
+        symbol="Aktie",
         asset_universe=universe,
         data=pd.DataFrame({"price": [100.0, 110.0, 120.0]}, index=periods),
         price_column="price",
+        metadata={"asset_class": "equity"},
     )
     Asset(
-        symbol="Bond",
+        symbol="Anleihe",
         asset_universe=universe,
         data=pd.DataFrame({"price": [50.0, 50.0, 50.0]}, index=periods),
         price_column="price",
+        metadata={"asset_class": "fixed_income"},
     )
 
     return Portfolio(
         asset_universe=universe,
-        fee_config=PerAssetFeeConfig(),
+        fee_config=AssetClassFeeConfig(),
     )
 
 
-def test_portfolio_buy_passes_symbol_to_fee_config(portfolio_with_per_asset_fees):
-    """Portfolio.buy_asset passes symbol to calculate_fee."""
-    p = portfolio_with_per_asset_fees
+def test_portfolio_buy_passes_metadata_to_fee_config(portfolio_with_asset_class_fees):
+    """Portfolio.buy_asset passes asset metadata to calculate_fee."""
+    p = portfolio_with_asset_class_fees
     p.collect_income()
     p.move_cash(100_000)
-    p.buy_asset("Stock", 10)  # 10 * 100 = 1000, fee = 1% = 10
-    p.buy_asset("Bond", 10)  # 10 * 50 = 500, fee = 0.1% = 0.5
+    p.buy_asset("Aktie", 10)  # 10 * 100 = 1000, equity fee = 1% = 10
+    p.buy_asset("Anleihe", 10)  # 10 * 50 = 500, fixed_income fee = 0.1% = 0.5
 
     txns = p.transactions
-    stock_buy = txns[txns["symbol"] == "Stock"].iloc[0]
-    bond_buy = txns[txns["symbol"] == "Bond"].iloc[0]
+    equity_buy = txns[txns["symbol"] == "Aktie"].iloc[0]
+    bond_buy = txns[txns["symbol"] == "Anleihe"].iloc[0]
 
-    assert stock_buy["fee"] == pytest.approx(10.0)
+    assert equity_buy["fee"] == pytest.approx(10.0)
     assert bond_buy["fee"] == pytest.approx(0.5)
 
 
-def test_portfolio_sell_passes_symbol_to_fee_config(portfolio_with_per_asset_fees):
-    """Portfolio.sell_asset passes symbol to calculate_fee."""
-    p = portfolio_with_per_asset_fees
+def test_portfolio_sell_passes_metadata_to_fee_config(portfolio_with_asset_class_fees):
+    """Portfolio.sell_asset passes asset metadata to calculate_fee."""
+    p = portfolio_with_asset_class_fees
     p.collect_income()
     p.move_cash(100_000)
-    p.buy_asset("Stock", 10)
-    p.buy_asset("Bond", 10)
+    p.buy_asset("Aktie", 10)
+    p.buy_asset("Anleihe", 10)
     p.update_history()
     p.advance_period()
 
     p.collect_income()
-    p.sell_asset("Stock", 5)  # 5 * 110 = 550, fee = 1% = 5.5
-    p.sell_asset("Bond", 5)  # 5 * 50 = 250, fee = 0.1% = 0.25
+    p.sell_asset("Aktie", 5)  # 5 * 110 = 550, equity fee = 1% = 5.5
+    p.sell_asset("Anleihe", 5)  # 5 * 50 = 250, fixed_income fee = 0.1% = 0.25
 
     txns = p.transactions
-    stock_sell = txns[(txns["symbol"] == "Stock") & (txns["type"] == "sell")].iloc[0]
-    bond_sell = txns[(txns["symbol"] == "Bond") & (txns["type"] == "sell")].iloc[0]
+    equity_sell = txns[(txns["symbol"] == "Aktie") & (txns["type"] == "sell")].iloc[0]
+    bond_sell = txns[(txns["symbol"] == "Anleihe") & (txns["type"] == "sell")].iloc[0]
 
-    assert stock_sell["fee"] == pytest.approx(5.5)
+    assert equity_sell["fee"] == pytest.approx(5.5)
     assert bond_sell["fee"] == pytest.approx(0.25)
 
 

@@ -183,15 +183,17 @@ fee_config = FeeConfig(
 portfolio = Portfolio(universe, tax_config=tax_config, fee_config=fee_config)
 ```
 
-Both `TaxConfig` and `FeeConfig` can be subclassed for custom rules. `FeeConfig.calculate_fee()` receives context about the trade — `symbol`, `quantity`, and `transaction_type` (`"buy"` or `"sell"`) — enabling tiered commissions, per-asset fees, or buy/sell-asymmetric pricing:
+Both `TaxConfig` and `FeeConfig` can be subclassed for custom rules. `FeeConfig.calculate_fee()` receives trade context — including the asset's `metadata` dict — enabling per-asset-class fees, tiered commissions, or buy/sell-asymmetric pricing:
 
 ```python
-class TieredFeeConfig(FeeConfig):
-    def calculate_fee(self, transaction_value, *, symbol=None,
-                      quantity=None, transaction_type=None):
-        if transaction_value <= 1_000:
-            return transaction_value * 0.01
-        return 10 + (transaction_value - 1_000) * 0.005
+Asset(symbol="Anleihe", asset_universe=universe, data=bond_data,
+      price_column="price", metadata={"asset_class": "fixed_income"})
+
+class AssetClassFeeConfig(FeeConfig):
+    def calculate_fee(self, transaction_value, *, metadata=None, **kw):
+        if (metadata or {}).get("asset_class") == "fixed_income":
+            return transaction_value * 0.001  # 0.1% for bonds
+        return transaction_value * 0.01       # 1% for equities
 ```
 
 ## Data Loading

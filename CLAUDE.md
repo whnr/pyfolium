@@ -148,7 +148,7 @@ Fee calculation (`FeeConfig` in `pyfolium/core.py`) uses Pydantic for validation
 - Percentage-based fee (validated 0.0-1.0)
 - Minimum and maximum fee caps (validated max >= min)
 - Fees incorporated into cost basis for tax calculations
-- `calculate_fee(transaction_value, *, symbol, quantity, transaction_type)` is overridable; Portfolio passes trade context so subclasses can implement tiered commissions, per-asset fees, or buy/sell-asymmetric pricing
+- `calculate_fee(transaction_value, *, symbol, quantity, transaction_type, metadata)` is overridable; Portfolio passes trade context (including the asset's `metadata` dict) so subclasses can implement tiered commissions, per-asset-class fees, or buy/sell-asymmetric pricing
 
 ## Testing Patterns
 
@@ -217,7 +217,7 @@ Recent features:
 - **Data loading**: `load_from_csv` and `load_from_dataframe` utilities with explicit `income_column` (defaults to `None`; raises `ValueError` when an explicitly named column is missing) and `min_density` sanity check (default `0.5`) that catches frequency mismatches like monthly data loaded as daily
 - **Comprehensive examples**: 7 usage patterns in examples/backtest_runner_example.py; benchmark in examples/benchmark.py
 - **sell_lot() (P1-5)**: `sell_lot(lot, quantity)` sells from a specific `TaxLot` obtained via `portfolio.open_lots`, bypassing FIFO/LIFO ordering; gated by `TaxConfig.allow_specific_lot` (default `True`); enables tax-loss harvesting and tax-optimized strategies; shares `_execute_lot_sales()` helper with `sell_asset()`
-- **FeeConfig extensibility (Phase 3)**: `calculate_fee()` now receives keyword-only context (`symbol`, `quantity`, `transaction_type`); Portfolio passes trade context at both buy and sell call sites; subclasses can implement tiered commissions, per-asset fee schedules, or buy/sell-asymmetric pricing; default implementation ignores context for full backward compatibility
+- **FeeConfig extensibility (Phase 3)**: `calculate_fee()` now receives keyword-only context (`symbol`, `quantity`, `transaction_type`, `metadata`); Portfolio passes trade context including the asset's `metadata` dict at both buy and sell call sites; subclasses can implement tiered commissions, metadata-driven per-asset-class fees, or buy/sell-asymmetric pricing; default implementation ignores context for full backward compatibility
 
 See `.claude/review-findings.md` for the full architecture review and action plan.
 

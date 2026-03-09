@@ -132,12 +132,12 @@ The tax system (`TaxConfig` in `pyfolium/core.py`) uses Pydantic for validation 
 - Per-share cost basis tracking for partial lot sales
 - Tax rates validated to be between 0.0 and 1.0
 
-`TaxConfig` methods (subclassable for custom tax rules):
-- `long_term_cutoff_period(current_period, data_frequency)` → `pd.Period` cutoff
+`TaxConfig` methods (subclassable for custom tax rules); Portfolio passes the asset's `metadata` dict to methods marked with `★`:
+- `long_term_cutoff_period(current_period, data_frequency, *, metadata)` → `pd.Period` cutoff ★
 - `classify_gain(purchase_period, current_period, data_frequency)` → `"short_term"` | `"long_term"`
-- `calculate_tax(short_term_gains, long_term_gains)` → `TaxResult(tax_liability, tax_paid)`
+- `calculate_tax(short_term_gains, long_term_gains, *, metadata)` → `TaxResult(tax_liability, tax_paid)` ★
 - `select_lots(lots)` → filtered and sorted `list[TaxLot]`
-- `effective_cost_basis(lot, all_open_lots)` → `float` (lot's own cost for FIFO/LIFO; weighted average for AVERAGE)
+- `effective_cost_basis(lot, all_open_lots, *, metadata)` → `float` (lot's own cost for FIFO/LIFO; weighted average for AVERAGE) ★
 
 `TaxResult` is a frozen dataclass returned by `calculate_tax`, containing `tax_liability` (added to `tax_owed`) and `tax_paid` (withheld from cash).
 

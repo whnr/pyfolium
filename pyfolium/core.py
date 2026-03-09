@@ -57,6 +57,8 @@ class TaxConfig(BaseModel):
         self,
         current_period: pd.Period,
         data_frequency: str,
+        *,
+        metadata: dict[str, str] | None = None,
     ) -> pd.Period:
         """Compute the earliest period that qualifies as long-term.
 
@@ -65,6 +67,8 @@ class TaxConfig(BaseModel):
         Args:
             current_period: The period of the sale or income event.
             data_frequency: Frequency string (e.g. ``'D'``, ``'M'``).
+            metadata: The traded asset's metadata dict (from
+                ``Asset.metadata``), or ``None`` if the asset has no metadata.
 
         Returns:
             The cutoff period. Lots with ``period <= cutoff`` are long-term.
@@ -98,6 +102,8 @@ class TaxConfig(BaseModel):
         self,
         short_term_gains: float,
         long_term_gains: float,
+        *,
+        metadata: dict[str, str] | None = None,
     ) -> TaxResult:
         """Calculate tax liability and withholding for given gains.
 
@@ -108,6 +114,8 @@ class TaxConfig(BaseModel):
         Args:
             short_term_gains: Total short-term capital gains or income.
             long_term_gains: Total long-term capital gains or income.
+            metadata: The traded asset's metadata dict (from
+                ``Asset.metadata``), or ``None`` if the asset has no metadata.
 
         Returns:
             A :class:`TaxResult` with ``tax_liability`` and ``tax_paid``.
@@ -148,6 +156,8 @@ class TaxConfig(BaseModel):
         self,
         lot: "TaxLot",
         all_open_lots: list["TaxLot"],
+        *,
+        metadata: dict[str, str] | None = None,
     ) -> float:
         """Return the cost basis per share to use for gain calculation.
 
@@ -158,6 +168,8 @@ class TaxConfig(BaseModel):
         Args:
             lot: The specific lot being sold.
             all_open_lots: All open lots for the same symbol.
+            metadata: The traded asset's metadata dict (from
+                ``Asset.metadata``), or ``None`` if the asset has no metadata.
 
         Returns:
             The effective cost basis per share.
@@ -885,12 +897,15 @@ class Portfolio:
         current_holdings = self.holdings.iloc[idx]
         symbols = self.holdings.columns[(current_holdings * income_this_period) != 0]
 
-        cutoff = self.tax_config.long_term_cutoff_period(
-            self.current_period, self.asset_universe.data_frequency
-        )
-
         for symbol in symbols:
             income = income_this_period[symbol]
+            asset_metadata = self.asset_universe.assets[symbol].metadata
+
+            cutoff = self.tax_config.long_term_cutoff_period(
+                self.current_period,
+                self.asset_universe.data_frequency,
+                metadata=asset_metadata,
+            )
 
             lots = self._tax_lots.get(symbol, [])
             total_quantity = sum(lot.quantity_remaining for lot in lots)
@@ -906,7 +921,9 @@ class Portfolio:
                 tax_result = TaxResult(tax_liability=0.0, tax_paid=0.0)
             else:
                 tax_result = self.tax_config.calculate_tax(
-                    short_term_income, long_term_income
+                    short_term_income,
+                    long_term_income,
+                    metadata=asset_metadata,
                 )
 
             transaction_amount = (
@@ -1152,8 +1169,12 @@ class Portfolio:
         long_term_gains = 0.0
         short_term_gains = 0.0
 
+        asset_metadata = self.asset_universe.assets[symbol].metadata
+
         cutoff = self.tax_config.long_term_cutoff_period(
-            self.current_period, self.asset_universe.data_frequency
+            self.current_period,
+            self.asset_universe.data_frequency,
+            metadata=asset_metadata,
         )
 
         # Snapshot open lots before the loop mutates quantity_remaining.
@@ -1161,7 +1182,9 @@ class Portfolio:
         all_open_lots = [ol for ol in self._tax_lots.get(symbol, []) if ol.is_open]
 
         for lot, lot_quantity_sold in lots_to_sell:
-            cost_basis = self.tax_config.effective_cost_basis(lot, all_open_lots)
+            cost_basis = self.tax_config.effective_cost_basis(
+                lot, all_open_lots, metadata=asset_metadata
+            )
             lot_gains = lot_quantity_sold * (sell_basis_per_share - cost_basis)
 
             if lot.period <= cutoff:
@@ -1175,7 +1198,9 @@ class Portfolio:
             )
             self._txn_df_cache = None
 
-        tax_result = self.tax_config.calculate_tax(short_term_gains, long_term_gains)
+        tax_result = self.tax_config.calculate_tax(
+            short_term_gains, long_term_gains, metadata=asset_metadata
+        )
         tax_paid = tax_result.tax_paid
 
         transaction_amount = total_quantity * price - fee - tax_paid

@@ -136,12 +136,12 @@ The design intent is:
    - `FeeConfig.calculate_fee(transaction_value, *, symbol, quantity, transaction_type, metadata) → float` is the fee interface. The keyword-only context parameters enable tiered commissions, metadata-driven per-asset-class fees (`metadata` carries the asset's `Asset.metadata` dict), and buy/sell-asymmetric pricing in subclasses; the default implementation ignores them.
    - `TaxConfig` follows the same pattern: all tax calculation logic lives in the config, not in Portfolio's sell and income paths.
 
-Both FeeConfig and TaxConfig own their calculation logic. FeeConfig has `calculate_fee()` with trade context. TaxConfig provides five methods that Portfolio delegates to:
-- `long_term_cutoff_period(current_period, data_frequency)` — computes the holding period boundary
+Both FeeConfig and TaxConfig own their calculation logic. FeeConfig has `calculate_fee()` with trade context. TaxConfig provides five methods that Portfolio delegates to — methods that receive per-trade context (including the asset's `metadata` dict) are marked with ★:
+- `long_term_cutoff_period(current_period, data_frequency, *, metadata)` ★ — computes the holding period boundary
 - `classify_gain(purchase_period, current_period, data_frequency)` — returns `"short_term"` or `"long_term"`
-- `calculate_tax(short_term_gains, long_term_gains)` — returns a `TaxResult` with `tax_liability` and `tax_paid`
+- `calculate_tax(short_term_gains, long_term_gains, *, metadata)` ★ — returns a `TaxResult` with `tax_liability` and `tax_paid`
 - `select_lots(lots)` — filters to open lots and sorts by FIFO/LIFO strategy (AVERAGE uses FIFO order)
-- `effective_cost_basis(lot, all_open_lots)` — returns the lot's own cost basis for FIFO/LIFO, or the weighted average across all open lots for AVERAGE
+- `effective_cost_basis(lot, all_open_lots, *, metadata)` ★ — returns the lot's own cost basis for FIFO/LIFO, or the weighted average across all open lots for AVERAGE
 
 TaxConfig also provides `allow_specific_lot` (default `False`), a policy flag that gates whether `sell_lot()` is available. This is a field-level control rather than a method override — it restricts which *API surface* the strategy can use, not how taxes are calculated.
 

@@ -1,7 +1,14 @@
 import pandas as pd
 import pytest
 
-from pyfolium.core import TaxConfig, TaxLot, TaxResult
+from pyfolium.core import (
+    Asset,
+    AssetUniverse,
+    Portfolio,
+    TaxConfig,
+    TaxLot,
+    TaxResult,
+)
 
 
 class TestTaxResult:
@@ -244,6 +251,93 @@ class TestEffectiveCostBasis:
         )
         config = TaxConfig(tax_strategy="AVERAGE")
         assert config.effective_cost_basis(lot, [lot]) == pytest.approx(80.0)
+
+
+class TestTaxConfigMetadata:
+    """TaxConfig methods receive asset metadata from Portfolio."""
+
+    def test_default_methods_accept_metadata(self):
+        """Default TaxConfig methods ignore metadata without error."""
+        config = TaxConfig(withhold_tax=True)
+        meta = {"asset_class": "equity"}
+        cutoff = config.long_term_cutoff_period(
+            pd.Period("2024-06-15", freq="D"), "D", metadata=meta
+        )
+        assert cutoff == pd.Period("2023-06-15", freq="D")
+
+        result = config.calculate_tax(100.0, 200.0, metadata=meta)
+        assert isinstance(result, TaxResult)
+
+        lot = TaxLot(
+            symbol="S",
+            period=pd.Period("2024-01-01", freq="D"),
+            quantity=10.0,
+            quantity_remaining=10.0,
+            cost_basis_per_share=50.0,
+            txn_index=0,
+        )
+        basis = config.effective_cost_basis(lot, [lot], metadata=meta)
+        assert basis == 50.0
+
+    def test_portfolio_passes_metadata_to_calculate_tax(self):
+        """Integration: metadata-aware TaxConfig receives asset metadata."""
+
+        class AssetClassTaxConfig(TaxConfig):
+            def calculate_tax(
+                self, short_term_gains, long_term_gains, *, metadata=None
+            ):
+                asset_class = (metadata or {}).get("asset_class", "equity")
+                rate = 0.10 if asset_class == "fixed_income" else 0.30
+                liability = (short_term_gains + long_term_gains) * rate
+                if liability <= 0:
+                    return TaxResult(tax_liability=0.0, tax_paid=0.0)
+                if self.withhold_tax:
+                    return TaxResult(tax_liability=0.0, tax_paid=liability)
+                return TaxResult(tax_liability=liability, tax_paid=0.0)
+
+        universe = AssetUniverse(data_frequency="D")
+        periods = pd.period_range("2023-01-01", periods=3, freq="D")
+
+        Asset(
+            symbol="Aktie",
+            asset_universe=universe,
+            data=pd.DataFrame({"price": [100.0, 110.0, 120.0]}, index=periods),
+            price_column="price",
+            metadata={"asset_class": "equity"},
+        )
+        Asset(
+            symbol="Anleihe",
+            asset_universe=universe,
+            data=pd.DataFrame({"price": [50.0, 60.0, 70.0]}, index=periods),
+            price_column="price",
+            metadata={"asset_class": "fixed_income"},
+        )
+
+        p = Portfolio(
+            asset_universe=universe,
+            tax_config=AssetClassTaxConfig(withhold_tax=True),
+        )
+        p.collect_income()
+        p.move_cash(100_000)
+        p.buy_asset("Aktie", 10)
+        p.buy_asset("Anleihe", 10)
+        p.update_history()
+        p.advance_period()
+
+        p.collect_income()
+        p.sell_asset("Aktie", 10)  # gain = 10*(110-100) = 100, tax = 30%
+        p.sell_asset("Anleihe", 10)  # gain = 10*(60-50) = 100, tax = 10%
+
+        txns = p.transactions
+        aktie_sell = txns[(txns["symbol"] == "Aktie") & (txns["type"] == "sell")].iloc[
+            0
+        ]
+        anleihe_sell = txns[
+            (txns["symbol"] == "Anleihe") & (txns["type"] == "sell")
+        ].iloc[0]
+
+        assert aktie_sell["tax_paid"] == pytest.approx(30.0)
+        assert anleihe_sell["tax_paid"] == pytest.approx(10.0)
 
 
 def test_tax_config(tax_config):

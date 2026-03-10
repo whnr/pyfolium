@@ -132,12 +132,12 @@ The tax system (`TaxConfig` in `pyfolium/core.py`) uses Pydantic for validation 
 - Per-share cost basis tracking for partial lot sales
 - Tax rates validated to be between 0.0 and 1.0
 
-`TaxConfig` methods (subclassable for custom tax rules):
-- `long_term_cutoff_period(current_period, data_frequency)` → `pd.Period` cutoff
+`TaxConfig` methods (subclassable for custom tax rules); Portfolio passes the asset's `metadata` dict to methods marked with `★`:
+- `long_term_cutoff_period(current_period, data_frequency, *, metadata)` → `pd.Period` cutoff ★
 - `classify_gain(purchase_period, current_period, data_frequency)` → `"short_term"` | `"long_term"`
-- `calculate_tax(short_term_gains, long_term_gains)` → `TaxResult(tax_liability, tax_paid)`
+- `calculate_tax(short_term_gains, long_term_gains, *, metadata)` → `TaxResult(tax_liability, tax_paid)` ★
 - `select_lots(lots)` → filtered and sorted `list[TaxLot]`
-- `effective_cost_basis(lot, all_open_lots)` → `float` (lot's own cost for FIFO/LIFO; weighted average for AVERAGE)
+- `effective_cost_basis(lot, all_open_lots, *, metadata)` → `float` (lot's own cost for FIFO/LIFO; weighted average for AVERAGE) ★
 
 `TaxResult` is a frozen dataclass returned by `calculate_tax`, containing `tax_liability` (added to `tax_owed`) and `tax_paid` (withheld from cash).
 
@@ -148,6 +148,7 @@ Fee calculation (`FeeConfig` in `pyfolium/core.py`) uses Pydantic for validation
 - Percentage-based fee (validated 0.0-1.0)
 - Minimum and maximum fee caps (validated max >= min)
 - Fees incorporated into cost basis for tax calculations
+- `calculate_fee(transaction_value, *, symbol, quantity, transaction_type, metadata)` is overridable; Portfolio passes trade context (including the asset's `metadata` dict) so subclasses can implement tiered commissions, per-asset-class fees, or buy/sell-asymmetric pricing
 
 ## Testing Patterns
 
@@ -216,6 +217,7 @@ Recent features:
 - **Data loading**: `load_from_csv` and `load_from_dataframe` utilities with explicit `income_column` (defaults to `None`; raises `ValueError` when an explicitly named column is missing) and `min_density` sanity check (default `0.5`) that catches frequency mismatches like monthly data loaded as daily
 - **Comprehensive examples**: 7 usage patterns in examples/backtest_runner_example.py; benchmark in examples/benchmark.py
 - **sell_lot() (P1-5)**: `sell_lot(lot, quantity)` sells from a specific `TaxLot` obtained via `portfolio.open_lots`, bypassing FIFO/LIFO ordering; gated by `TaxConfig.allow_specific_lot` (default `True`); enables tax-loss harvesting and tax-optimized strategies; shares `_execute_lot_sales()` helper with `sell_asset()`
+- **FeeConfig extensibility (Phase 3)**: `calculate_fee()` now receives keyword-only context (`symbol`, `quantity`, `transaction_type`, `metadata`); Portfolio passes trade context including the asset's `metadata` dict at both buy and sell call sites; subclasses can implement tiered commissions, metadata-driven per-asset-class fees, or buy/sell-asymmetric pricing; default implementation ignores context for full backward compatibility
 
 See `.claude/review-findings.md` for the full architecture review and action plan.
 

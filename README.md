@@ -183,7 +183,7 @@ fee_config = FeeConfig(
 portfolio = Portfolio(universe, tax_config=tax_config, fee_config=fee_config)
 ```
 
-Both `TaxConfig` and `FeeConfig` can be subclassed for custom rules. `FeeConfig.calculate_fee()` receives trade context — including the asset's `metadata` dict — enabling per-asset-class fees, tiered commissions, or buy/sell-asymmetric pricing:
+Both `TaxConfig` and `FeeConfig` can be subclassed for custom rules. Some of their methods receive trade context — including the asset's `metadata` dict — enabling per-asset-class taxes and fees. Example:
 
 ```python
 Asset(symbol="Anleihe", asset_universe=universe, data=bond_data,

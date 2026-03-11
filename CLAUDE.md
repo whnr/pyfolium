@@ -203,6 +203,13 @@ examples/
 strategies/         # User-defined strategies (empty, for users to populate)
 ```
 
+## Release & Publishing
+
+- **Build backend**: `uv_build` (not hatchling); configured via `[tool.uv.build-backend]` with `module-root = ""` for flat layout
+- **Version**: tracked in `pyproject.toml` under `[project].version`; bump this field before tagging a release
+- **Publishing**: automated via GitHub Releases → PyPI trusted publishing (OIDC); workflow at `.github/workflows/publish.yml` triggers on `release: published`; no API token needed — PyPI verifies identity via OIDC
+- **Pre-publish**: author must configure trusted publisher on pypi.org (Project → Publishing → add GitHub publisher, repo/workflow/environment)
+
 ## Current State
 
 Recent features:

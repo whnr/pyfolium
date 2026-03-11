@@ -1,6 +1,13 @@
 # Pyfolium
 
+[![PyPI version](https://img.shields.io/pypi/v/pyfolium)](https://pypi.org/project/pyfolium/)
+[![Python](https://img.shields.io/pypi/pyversions/pyfolium)](https://pypi.org/project/pyfolium/)
+[![CI](https://github.com/TODO/pyfolium/actions/workflows/ci.yml/badge.svg)](https://github.com/TODO/pyfolium/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/TODO/pyfolium/blob/main/LICENSE)
+
 **Hätte hätte Fahrradkette** — If only, if only...
+
+Pyfolium is a tax-aware, fee-aware portfolio backtesting engine for Python. It simulates historical portfolio evolution period-by-period, enforces correct transaction ordering, and returns clean pandas DataFrames (`portfolio.history`, `portfolio.transactions`) that plug into whichever analytics or visualization libraries you prefer. It deliberately excludes performance analytics, visualization, data fetching, and optimization — keeping the library small, fast, and composable.
 
 A Python backtesting library for portfolio management with support for taxes, fees, income, and custom trading strategies.
 
@@ -17,16 +24,13 @@ Pyfolium outputs clean pandas DataFrames (`portfolio.history`, `portfolio.transa
 ## Installation
 
 ```bash
-# Using uv (recommended)
-uv sync
+pip install pyfolium
+```
 
-# Set up pre-commit hooks (runs ruff automatically on commit)
-uv run setup-dev
+Or with uv:
 
-# Or using pip
-pip install -e .
-pip install pre-commit
-pre-commit install
+```bash
+uv add pyfolium
 ```
 
 ## Quick Start
@@ -209,10 +213,12 @@ universe = AssetUniverse(data_frequency='D')
 Asset('Stock', universe, data, income_column='income')
 ```
 
-## Development
+## Development Setup
 
 ```bash
 # First-time setup
+git clone https://github.com/TODO/pyfolium
+cd pyfolium
 uv sync
 uv run setup-dev  # Installs pre-commit hooks
 
@@ -252,7 +258,7 @@ examples/           # Usage examples
 
 ## Architecture
 
-For the full design rationale — modeling philosophy, data flow, tax system design, and architectural decisions — see [DESIGN.md](DESIGN.md).
+For the full design rationale — modeling philosophy, data flow, tax system design, and architectural decisions — see [DESIGN.md](https://github.com/TODO/pyfolium/blob/main/DESIGN.md).
 
 ### Period State Machine
 Each period follows strict sequencing:
@@ -286,7 +292,7 @@ See `examples/backtest_runner_example.py` for comprehensive examples including:
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](https://github.com/TODO/pyfolium/blob/main/LICENSE) file for details.
 
 ## Contributing
 

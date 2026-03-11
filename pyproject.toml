@@ -14,8 +14,11 @@ dependencies = [
 setup-dev = "pyfolium._setup:setup_dev_environment"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.7,<0.8"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
 
 [dependency-groups]
 dev = [

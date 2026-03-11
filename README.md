@@ -2,8 +2,8 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/pyfolium)](https://pypi.org/project/pyfolium/)
 [![Python](https://img.shields.io/pypi/pyversions/pyfolium)](https://pypi.org/project/pyfolium/)
-[![CI](https://github.com/TODO/pyfolium/actions/workflows/ci.yml/badge.svg)](https://github.com/TODO/pyfolium/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/TODO/pyfolium/blob/main/LICENSE)
+[![CI](https://github.com/whnr/pyfolium/actions/workflows/ci.yml/badge.svg)](https://github.com/whnr/pyfolium/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/whnr/pyfolium/blob/main/LICENSE)
 
 **Hätte hätte Fahrradkette** — If only, if only...
 
@@ -217,7 +217,7 @@ Asset('Stock', universe, data, income_column='income')
 
 ```bash
 # First-time setup
-git clone https://github.com/TODO/pyfolium
+git clone https://github.com/whnr/pyfolium
 cd pyfolium
 uv sync
 uv run setup-dev  # Installs pre-commit hooks
@@ -258,7 +258,7 @@ examples/           # Usage examples
 
 ## Architecture
 
-For the full design rationale — modeling philosophy, data flow, tax system design, and architectural decisions — see [DESIGN.md](https://github.com/TODO/pyfolium/blob/main/DESIGN.md).
+For the full design rationale — modeling philosophy, data flow, tax system design, and architectural decisions — see [DESIGN.md](https://github.com/whnr/pyfolium/blob/main/DESIGN.md).
 
 ### Period State Machine
 Each period follows strict sequencing:
@@ -292,7 +292,7 @@ See `examples/backtest_runner_example.py` for comprehensive examples including:
 
 ## License
 
-MIT License - see [LICENSE](https://github.com/TODO/pyfolium/blob/main/LICENSE) file for details.
+MIT License - see [LICENSE](https://github.com/whnr/pyfolium/blob/main/LICENSE) file for details.
 
 ## Contributing
 

@@ -25,9 +25,9 @@ dependencies = [
 setup-dev = "pyfolium._setup:setup_dev_environment"
 
 [project.urls]
-Homepage = "https://github.com/TODO/pyfolium"
-Repository = "https://github.com/TODO/pyfolium"
-Issues = "https://github.com/TODO/pyfolium/issues"
+Homepage = "https://github.com/whnr/pyfolium"
+Repository = "https://github.com/whnr/pyfolium"
+Issues = "https://github.com/whnr/pyfolium/issues"
 
 [build-system]
 requires = ["uv_build>=0.7,<0.8"]

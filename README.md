@@ -7,7 +7,7 @@
 
 **Hätte hätte Fahrradkette** — If only, if only...
 
-Pyfolium is a tax-aware, fee-aware portfolio backtesting engine for Python. It simulates historical portfolio evolution period-by-period, enforces correct transaction ordering, and returns clean pandas DataFrames (`portfolio.history`, `portfolio.transactions`) that plug into whichever analytics or visualization libraries you prefer. It deliberately excludes performance analytics, visualization, data fetching, and optimization — keeping the library small, fast, and composable.
+Pyfolium is an income-aware, tax-aware, and fee-aware portfolio backtesting engine for Python. It simulates historical portfolio evolution period-by-period, enforces correct transaction ordering, and returns clean pandas DataFrames (`portfolio.history`, `portfolio.transactions`) that plug into whichever analytics or visualization libraries you prefer. It deliberately excludes performance analytics, visualization, data fetching, and optimization — keeping the library small, fast, and composable.
 
 A Python backtesting library for portfolio management with support for taxes, fees, income, and custom trading strategies.
 
@@ -15,9 +15,9 @@ A Python backtesting library for portfolio management with support for taxes, fe
 
 Pyfolium is a **backtesting engine**, not a full-featured analytics platform.
 
-**What it does:** Tax-aware, fee-aware portfolio backtesting with enforced transaction ordering, an extensible strategy framework, and clean pandas-based data structures.
+**What it does:** Income-aware, tax-aware, fee-aware portfolio backtesting with enforced transaction ordering, an extensible strategy framework, and pandas-based data structures.
 
-**What it doesn't do:** Performance analytics, visualization, data fetching, optimization, risk models.
+**What it doesn't do:** Data fetching, performance analytics, visualization, optimization, risk models.
 
 Pyfolium outputs clean pandas DataFrames (`portfolio.history`, `portfolio.transactions`) that plug into whichever libraries you prefer for those tasks.
 

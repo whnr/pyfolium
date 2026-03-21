@@ -5,30 +5,6 @@
 
 **After completion items will be deleted and can be recovered from git commit history.**
 
-## P4 — Make examples testable
-
-### P4-1: Refactor examples to return values
-**File:** `examples/backtest_runner_example.py`
-**Problem:** Examples use print(), can't be imported and tested.
-**Fix:**
-- Each `example_*()` function returns its result (BacktestResult or relevant values)
-- Keep print() for human readability but add return statements
-
-### P4-2: Add test file for examples
-**File:** `tests/test_examples.py` (new)
-
-### P4-3: Missing `__init__.py` or pytest path config for examples
-**Check:** Ensure examples directory is importable from tests.
-May need `examples/__init__.py` or pytest `pythonpath` config update.
-
-### P4-4: Audit `examples/backtest_runner_example.py` for correctness
-**File:** `examples/backtest_runner_example.py`
-**Problem:** Flagged during PR review as potentially unreliable AI-generated code.
-Needs verification that all examples actually run successfully and produce
-correct results.
-
----
-
 ## Additional notes from review
 
 ### Strategy `step()` returns nothing
@@ -69,6 +45,6 @@ Recommended sequence:
 12. ~~**P1-4** (error recovery)~~ ✓ DONE
 13. ~~**Logging architecture**~~ ✓ DONE
 14. ~~**Verbosity/OutputMode**~~ ✓ DONE
-16. **P4-*** (testable examples, audit existing) — After all API changes settle
+16. ~~**P4-*** (testable examples, audit existing) — After all API changes settle~~ ✓ DONE
 
 Each step should be a single reviewable commit.

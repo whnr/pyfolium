@@ -222,7 +222,7 @@ Recent features:
 - **Portfolio.clone()**: Deep copy for strategy comparison and optimization
 - **Pydantic validation**: TaxConfig and FeeConfig with automatic validation
 - **Data loading**: `load_from_csv` and `load_from_dataframe` utilities with explicit `income_column` (defaults to `None`; raises `ValueError` when an explicitly named column is missing) and `min_density` sanity check (default `0.5`) that catches frequency mismatches like monthly data loaded as daily
-- **Comprehensive examples**: 7 usage patterns in examples/backtest_runner_example.py; benchmark in examples/benchmark.py
+- **Comprehensive examples**: 10 usage patterns in examples/backtest_runner_example.py (simple backtest, taxes & fees, tax-loss harvesting with sell_lot, data loading, output modes, hooks, step-by-step debugging, strategy comparison, custom period ranges, structured logging); tested via tests/test_examples.py; benchmark in examples/benchmark.py
 - **sell_lot() (P1-5)**: `sell_lot(lot, quantity)` sells from a specific `TaxLot` obtained via `portfolio.open_lots`, bypassing FIFO/LIFO ordering; gated by `TaxConfig.allow_specific_lot` (default `True`); enables tax-loss harvesting and tax-optimized strategies; shares `_execute_lot_sales()` helper with `sell_asset()`
 - **FeeConfig extensibility (Phase 3)**: `calculate_fee()` now receives keyword-only context (`symbol`, `quantity`, `transaction_type`, `metadata`); Portfolio passes trade context including the asset's `metadata` dict at both buy and sell call sites; subclasses can implement tiered commissions, metadata-driven per-asset-class fees, or buy/sell-asymmetric pricing; default implementation ignores context for full backward compatibility
 

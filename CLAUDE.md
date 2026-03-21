@@ -110,6 +110,7 @@ This state machine is enforced via `PortfolioState` enum to prevent operations i
 - `log(severity, message, data)` emits structured `LogEntry` to `_log`; drained by runner after each step
 - Tracks all trade attempts (successful and failed) in `trades_df`
 - Parameters stored in `parameters` dict for reproducibility
+- Market observation helpers: `get_price(symbol)` → current price, `get_prices()` → all prices as Series, `get_lots(symbol)` → open TaxLots (empty list if none)
 - `initial_cash`: optional cash deposited via `move_cash()` at the first active period (keyword-only, `None` by default)
 - `start_period`: optional first period for this strategy; `BacktestRunner` resolves it with precedence: explicit runner arg > `strategy.start_period` > `portfolio.current_period` (keyword-only, `None` by default)
 
@@ -225,6 +226,7 @@ Recent features:
 - **Comprehensive examples**: 10 usage patterns in examples/backtest_runner_example.py (simple backtest, taxes & fees, tax-loss harvesting with sell_lot, data loading, output modes, hooks, step-by-step debugging, strategy comparison, custom period ranges, structured logging); tested via tests/test_examples.py; benchmark in examples/benchmark.py
 - **sell_lot() (P1-5)**: `sell_lot(lot, quantity)` sells from a specific `TaxLot` obtained via `portfolio.open_lots`, bypassing FIFO/LIFO ordering; gated by `TaxConfig.allow_specific_lot` (default `True`); enables tax-loss harvesting and tax-optimized strategies; shares `_execute_lot_sales()` helper with `sell_asset()`
 - **FeeConfig extensibility (Phase 3)**: `calculate_fee()` now receives keyword-only context (`symbol`, `quantity`, `transaction_type`, `metadata`); Portfolio passes trade context including the asset's `metadata` dict at both buy and sell call sites; subclasses can implement tiered commissions, metadata-driven per-asset-class fees, or buy/sell-asymmetric pricing; default implementation ignores context for full backward compatibility
+- **Strategy market observation helpers**: `BaseStrategy` provides `get_price(symbol)`, `get_prices()`, and `get_lots(symbol)` convenience methods that delegate to `price_matrix`/`open_lots` using `current_period`; reduces boilerplate in price-reactive strategies
 
 See `.claude/review-findings.md` for the full architecture review and action plan.
 

@@ -135,7 +135,7 @@ class MonthlyRebalanceStrategy(BaseStrategy):
 
         portfolio_value = self.portfolio.total_value
         holdings = self.portfolio.holdings.loc[self.portfolio.current_period]
-        prices = self.asset_universe.price_matrix.loc[self.portfolio.current_period]
+        prices = self.get_prices()
 
         # Calculate target shares for each asset
         trades = []
@@ -174,12 +174,8 @@ class TaxAwareStrategy(BaseStrategy):
             return [("STOCK_A", 100)]
 
         if self.bought and not self.sold:
-            price = float(
-                self.asset_universe.price_matrix.loc[
-                    self.portfolio.current_period, "STOCK_A"
-                ]
-            )
-            lots = self.portfolio.open_lots.get("STOCK_A", [])
+            price = self.get_price("STOCK_A")
+            lots = self.get_lots("STOCK_A")
             if lots:
                 avg_cost = sum(
                     lot.cost_basis_per_share * lot.quantity_remaining for lot in lots
@@ -215,13 +211,8 @@ class TaxLossHarvestingStrategy(BaseStrategy):
         self.lot_a_cost: float = 0.0
         self.harvested = False
 
-    def _current_price(self) -> float:
-        return float(
-            self.asset_universe.price_matrix.loc[self.portfolio.current_period, "FUND"]
-        )
-
     def get_trades(self):
-        price = self._current_price()
+        price = self.get_price("FUND")
 
         if not self.lot_a_bought and self.portfolio.cash >= 5000:
             self.lot_a_bought = True
@@ -245,8 +236,8 @@ class TaxLossHarvestingStrategy(BaseStrategy):
         if self.harvested or not self.lot_b_bought:
             return
 
-        price = self._current_price()
-        open_lots = self.portfolio.open_lots.get("FUND", [])
+        price = self.get_price("FUND")
+        open_lots = self.get_lots("FUND")
         if len(open_lots) < 2:
             return
 
@@ -285,11 +276,7 @@ class LoggingStrategy(BaseStrategy):
         self.entry_price: float = 0.0
 
     def get_trades(self):
-        price = float(
-            self.asset_universe.price_matrix.loc[
-                self.portfolio.current_period, "STOCK_A"
-            ]
-        )
+        price = self.get_price("STOCK_A")
 
         if not self.invested and self.portfolio.cash >= 10000:
             self.invested = True

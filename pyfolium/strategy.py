@@ -4,7 +4,7 @@ from typing import Any
 
 import pandas as pd
 
-from .core import Portfolio
+from .core import Portfolio, TaxLot
 from .logging import LogEntry, Severity
 
 
@@ -103,6 +103,44 @@ class BaseStrategy(ABC):
                 data=data,
             )
         )
+
+    def get_price(self, symbol: str) -> float:
+        """Current-period price for a single asset.
+
+        Args:
+            symbol: The asset symbol to look up.
+
+        Returns:
+            The asset's price at ``portfolio.current_period``.
+        """
+        return float(
+            self.asset_universe.price_matrix.loc[
+                self.portfolio.current_period, symbol
+            ]
+        )
+
+    def get_prices(self) -> pd.Series:
+        """All asset prices for the current period.
+
+        Returns:
+            A Series indexed by symbol with prices at
+            ``portfolio.current_period``.
+        """
+        return self.asset_universe.price_matrix.loc[self.portfolio.current_period]
+
+    def get_lots(self, symbol: str) -> list[TaxLot]:
+        """Open tax lots for a symbol.
+
+        Convenience wrapper around ``portfolio.open_lots``. Returns an
+        empty list when the symbol has no open positions.
+
+        Args:
+            symbol: The asset symbol to look up.
+
+        Returns:
+            List of open ``TaxLot`` instances (quantity_remaining > 0).
+        """
+        return self.portfolio.open_lots.get(symbol, [])
 
     @abstractmethod
     def get_trades(self) -> list[tuple[str, float]]:

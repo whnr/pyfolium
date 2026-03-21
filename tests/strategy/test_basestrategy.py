@@ -227,3 +227,55 @@ def test_strategy_log_clearable(strategy):
     strategy._log.clear()
 
     assert strategy._log == []
+
+
+# ---------------------------------------------------------------------------
+# Market observation helpers
+# ---------------------------------------------------------------------------
+
+
+def test_get_price_returns_current_period_price(strategy):
+    """get_price() returns the asset price at current_period."""
+    price = strategy.get_price("Stock")
+    assert price == 100.0
+    assert isinstance(price, float)
+
+
+def test_get_price_unknown_symbol_raises(strategy):
+    """get_price() raises KeyError for a symbol not in the universe."""
+    with pytest.raises(KeyError):
+        strategy.get_price("MISSING")
+
+
+def test_get_prices_returns_series(strategy):
+    """get_prices() returns a Series of all asset prices at current_period."""
+    prices = strategy.get_prices()
+    assert isinstance(prices, pd.Series)
+    assert prices["Stock"] == 100.0
+
+
+def test_get_lots_empty_when_no_position(strategy):
+    """get_lots() returns an empty list when no lots exist for the symbol."""
+    lots = strategy.get_lots("Stock")
+    assert lots == []
+
+
+def test_get_lots_empty_for_unknown_symbol(strategy):
+    """get_lots() returns an empty list for a symbol with no lots."""
+    lots = strategy.get_lots("MISSING")
+    assert lots == []
+
+
+def test_get_lots_returns_open_lots_after_buy(portfolio, asset_universe):
+    """get_lots() returns the open TaxLot after a buy."""
+    portfolio.collect_income()
+    portfolio.move_cash(10000)
+    portfolio.buy_asset("Stock", 5)
+
+    strategy = SimpleStrategy(portfolio)
+    lots = strategy.get_lots("Stock")
+
+    assert len(lots) == 1
+    assert lots[0].symbol == "Stock"
+    assert lots[0].quantity_remaining == 5
+    assert lots[0].cost_basis_per_share == 100.0

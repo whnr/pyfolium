@@ -152,108 +152,137 @@ class MonthlyRebalanceStrategy(BaseStrategy):
 
 
 class TaxAwareStrategy(BaseStrategy):
-    """Strategy that buys early and sells later to demonstrate tax treatment.
+    """Sells when unrealized gain exceeds a threshold (profit-taking).
 
-    Buys at the start, sells a portion after 100 periods to realize
-    short-term capital gains (with daily data and a 1-year holding period,
-    100 days is well within the short-term window).
+    Buys at the start, then sells half when current price exceeds cost
+    basis by `profit_threshold`. With daily data, the gain is short-term.
     """
 
-    def __init__(self, portfolio, **kwargs):
-        super().__init__(portfolio, parameters={}, **kwargs)
+    def __init__(self, portfolio, profit_threshold=0.20, **kwargs):
+        super().__init__(
+            portfolio,
+            parameters={"profit_threshold": profit_threshold},
+            **kwargs,
+        )
+        self.profit_threshold = profit_threshold
         self.bought = False
         self.sold = False
-        self.periods_elapsed = 0
 
     def get_trades(self):
-        self.periods_elapsed += 1
-
         if not self.bought and self.portfolio.cash >= 10000:
             self.bought = True
             return [("STOCK_A", 100)]
 
-        if self.bought and not self.sold and self.periods_elapsed >= 100:
-            self.sold = True
-            return [("STOCK_A", -50)]  # Sell half → short-term gain
+        if self.bought and not self.sold:
+            price = float(
+                self.asset_universe.price_matrix.loc[
+                    self.portfolio.current_period, "STOCK_A"
+                ]
+            )
+            lots = self.portfolio.open_lots.get("STOCK_A", [])
+            if lots:
+                avg_cost = sum(
+                    lot.cost_basis_per_share * lot.quantity_remaining for lot in lots
+                ) / sum(lot.quantity_remaining for lot in lots)
+                if (price - avg_cost) / avg_cost >= self.profit_threshold:
+                    self.sold = True
+                    return [("STOCK_A", -50)]  # Sell half → short-term gain
 
         return []
 
 
 class TaxLossHarvestingStrategy(BaseStrategy):
-    """Strategy that harvests tax losses by selling specific losing lots.
+    """Harvests tax losses by selling the lot with the largest unrealized loss.
 
-    Buys FUND in two lots at different prices, then uses sell_lot() to
-    specifically sell the lot purchased at a higher price (the loser),
-    bypassing FIFO ordering to maximize realized losses.
+    Buys two lots at different price levels (lot B after price rises
+    `rebuy_threshold`), then uses sell_lot() to target the biggest loser
+    when any lot's loss exceeds `loss_threshold` — bypassing FIFO ordering.
     """
 
-    def __init__(self, portfolio, **kwargs):
-        super().__init__(portfolio, parameters={}, **kwargs)
+    def __init__(self, portfolio, rebuy_threshold=0.15, loss_threshold=0.15, **kwargs):
+        super().__init__(
+            portfolio,
+            parameters={
+                "rebuy_threshold": rebuy_threshold,
+                "loss_threshold": loss_threshold,
+            },
+            **kwargs,
+        )
+        self.rebuy_threshold = rebuy_threshold
+        self.loss_threshold = loss_threshold
         self.lot_a_bought = False
         self.lot_b_bought = False
+        self.lot_a_cost: float = 0.0
         self.harvested = False
-        self.periods_elapsed = 0
+
+    def _current_price(self) -> float:
+        return float(
+            self.asset_universe.price_matrix.loc[self.portfolio.current_period, "FUND"]
+        )
 
     def get_trades(self):
-        # Buy orders go through the normal execute_trades path
-        self.periods_elapsed += 1
+        price = self._current_price()
 
-        if not self.lot_a_bought and self.periods_elapsed == 1:
+        if not self.lot_a_bought and self.portfolio.cash >= 5000:
             self.lot_a_bought = True
-            return [("FUND", 50)]  # Lot A: buy at ~$100
+            self.lot_a_cost = price
+            return [("FUND", 50)]
 
-        if not self.lot_b_bought and self.periods_elapsed == 30:
+        if (
+            self.lot_a_bought
+            and not self.lot_b_bought
+            and price >= self.lot_a_cost * (1 + self.rebuy_threshold)
+        ):
             self.lot_b_bought = True
-            return [("FUND", 50)]  # Lot B: buy at ~$122
+            return [("FUND", 50)]
 
         return []
 
     def step(self):
-        """Override step to handle lot-specific selling."""
-        trades = self.get_trades()
-        self.execute_trades(trades)
+        """Execute trades, then check lots for harvest opportunity."""
+        self.execute_trades(self.get_trades())
 
-        # At period 90, price is ~$85 — both lots are underwater but
-        # Lot B ($122) has a larger loss than Lot A ($100).
-        # Sell Lot B specifically to harvest the bigger loss.
-        if not self.harvested and self.periods_elapsed == 90:
-            open_lots = self.portfolio.open_lots.get("FUND", [])
-            if len(open_lots) >= 2:
-                # Sort by cost basis descending to find the most expensive lot
-                lots_by_cost = sorted(
-                    open_lots, key=lambda lot: lot.cost_basis_per_share, reverse=True
-                )
-                losing_lot = lots_by_cost[0]
+        if self.harvested or not self.lot_b_bought:
+            return
 
-                self.log(
-                    Severity.INFO,
-                    "Harvesting tax loss",
-                    data={
-                        "lot_period": str(losing_lot.period),
-                        "cost_basis": losing_lot.cost_basis_per_share,
-                        "quantity": losing_lot.quantity_remaining,
-                    },
-                )
+        price = self._current_price()
+        open_lots = self.portfolio.open_lots.get("FUND", [])
+        if len(open_lots) < 2:
+            return
 
-                self.portfolio.sell_lot(losing_lot, losing_lot.quantity_remaining)
-                self._record_trade(
-                    "FUND",
-                    -losing_lot.quantity_remaining,
-                    -losing_lot.quantity_remaining,
-                    category="tax_loss_harvest",
-                )
-                self.harvested = True
+        def loss_pct(lot):
+            return (lot.cost_basis_per_share - price) / lot.cost_basis_per_share
+
+        worst_lot = max(open_lots, key=loss_pct)
+        if loss_pct(worst_lot) >= self.loss_threshold:
+            self.log(
+                Severity.INFO,
+                "Harvesting tax loss",
+                data={
+                    "lot_period": str(worst_lot.period),
+                    "cost_basis": worst_lot.cost_basis_per_share,
+                    "current_price": price,
+                    "loss_pct": f"{loss_pct(worst_lot):.1%}",
+                    "quantity": worst_lot.quantity_remaining,
+                },
+            )
+            self.portfolio.sell_lot(worst_lot, worst_lot.quantity_remaining)
+            self._record_trade(
+                "FUND",
+                -worst_lot.quantity_remaining,
+                -worst_lot.quantity_remaining,
+                category="tax_loss_harvest",
+            )
+            self.harvested = True
 
 
 class LoggingStrategy(BaseStrategy):
-    """Strategy that emits structured log entries for observability.
-
-    Logs trade decisions with context: prices, cash, and reasoning.
-    """
+    """Emits structured log entries with price context for observability."""
 
     def __init__(self, portfolio, **kwargs):
         super().__init__(portfolio, parameters={}, **kwargs)
         self.invested = False
+        self.entry_price: float = 0.0
 
     def get_trades(self):
         price = float(
@@ -264,6 +293,7 @@ class LoggingStrategy(BaseStrategy):
 
         if not self.invested and self.portfolio.cash >= 10000:
             self.invested = True
+            self.entry_price = price
             self.log(
                 Severity.INFO,
                 "Investing initial capital",
@@ -272,10 +302,15 @@ class LoggingStrategy(BaseStrategy):
             return [("STOCK_A", 50)]
 
         if self.invested:
+            delta_pct = (price - self.entry_price) / self.entry_price
             self.log(
                 Severity.DEBUG,
                 "Holding position",
-                data={"price": price, "unrealized_value": price * 50},
+                data={
+                    "price": price,
+                    "unrealized_value": price * 50,
+                    "delta_pct": round(delta_pct, 4),
+                },
             )
 
         return []
@@ -325,6 +360,9 @@ def example_simple() -> BacktestResult:
 
 def example_taxes_and_fees() -> BacktestResult:
     """Demonstrate realistic simulation with tax and fee configuration.
+
+    The TaxAwareStrategy sells when price rises 20%+ above cost basis,
+    triggering a short-term capital gain (held < 1 year).
 
     Shows how TaxConfig and FeeConfig affect portfolio economics:
     - Capital gains are classified as short-term (taxed at 30%)
@@ -384,8 +422,11 @@ def example_taxes_and_fees() -> BacktestResult:
 def example_tax_loss_harvesting() -> BacktestResult:
     """Demonstrate lot-level introspection and specific-lot selling.
 
-    Uses sell_lot() to bypass FIFO ordering and target the lot with the
-    largest unrealized loss — a common tax optimization technique.
+    The TaxLossHarvestingStrategy reacts to market prices:
+    - Buys a second lot when price rises 15%+ (creating cost disparity)
+    - Scans open lots each period for unrealized losses > 15%
+    - Sells the biggest loser via sell_lot(), bypassing FIFO ordering
+
     Requires TaxConfig(allow_specific_lot=True).
     """
     print("\n" + "=" * 70)

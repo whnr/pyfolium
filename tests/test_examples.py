@@ -67,7 +67,7 @@ class TestExampleTaxesAndFees:
         assert total_fees > 0
 
     def test_short_term_gains_realized(self, capsys):
-        """Selling after 100 days (< 1 year) should classify as short-term."""
+        """Price-triggered sell (20% gain) within 1 year → short-term gain."""
         result = example_taxes_and_fees()
         txns = result.portfolio.transactions
         sells = txns[txns["type"] == "sell"]
@@ -94,8 +94,9 @@ class TestExampleTaxLossHarvesting:
         assert result.success is True
 
     def test_harvested_the_more_expensive_lot(self, capsys):
-        """The strategy should sell the lot bought at ~$122 (period 30),
-        not the lot bought at $100 (period 0). Only the cheaper lot remains.
+        """The strategy should sell the lot with the higher cost basis
+        (bought when price was up 15%+), not the lot bought at $100.
+        Only the cheaper lot remains.
         """
         result = example_tax_loss_harvesting()
         open_lots = result.portfolio.open_lots.get("FUND", [])
@@ -116,7 +117,7 @@ class TestExampleTaxLossHarvesting:
         assert total_gains < 0  # Loss
 
     def test_strategy_logged_harvest(self, capsys):
-        """The strategy emits an INFO log entry when harvesting."""
+        """The strategy emits an INFO log entry with price context."""
         result = example_tax_loss_harvesting()
         strategy_info = [
             e
@@ -124,7 +125,10 @@ class TestExampleTaxLossHarvesting:
             if e.source == "strategy" and e.message == "Harvesting tax loss"
         ]
         assert len(strategy_info) == 1
-        assert "cost_basis" in strategy_info[0].data
+        data = strategy_info[0].data
+        assert "cost_basis" in data
+        assert "current_price" in data
+        assert "loss_pct" in data
 
 
 class TestExampleDataLoading:
@@ -299,6 +303,7 @@ class TestExampleLogging:
             assert entry.data is not None
             assert "price" in entry.data
             assert "unrealized_value" in entry.data
+            assert "delta_pct" in entry.data
 
     def test_log_df_filtering(self, capsys):
         """log_df stores severity as string names (INFO, DEBUG, etc.)."""

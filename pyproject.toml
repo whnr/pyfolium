@@ -27,6 +27,7 @@ setup-dev = "pyfolium._setup:setup_dev_environment"
 [project.urls]
 Homepage = "https://github.com/whnr/pyfolium"
 Repository = "https://github.com/whnr/pyfolium"
+Documentation = "https://whnr.github.io/pyfolium/"
 Issues = "https://github.com/whnr/pyfolium/issues"
 
 [build-system]
@@ -46,6 +47,12 @@ dev = [
     "types-tqdm>=4.67.0.20250809",
     "ruff>=0.8.0",
     "pre-commit>=3.0.0",
+]
+docs = [
+    "mkdocs-material>=9.6",
+    "mkdocstrings[python]>=0.27",
+    "mkdocs-gen-files>=0.5",
+    "mkdocs-literate-nav>=0.6",
 ]
 
 # Pytest configuration
